@@ -214,107 +214,109 @@ def loadLayer(state_dict, layerName, layer):
     layer.weight = state_dict[layerName + 'weight']
     layer.bias = state_dict[layerName + 'bias']
 
-dataset = PTBXLDataset()
-train_loader, test_loader, val_loader = dataset.get_Loaders()
-path = "G:\\Projects\\MA"
-model_version = 1
 
-recalculate = False
+if __name__=="__main__":
+    dataset = PTBXLDataset()
+    train_loader, test_loader, val_loader = dataset.get_Loaders()
+    path = "G:\\Projects\\MA"
+    model_version = 1
 
-if os.path.exists(os.path.join(path, f'spec_model{model_version}.chpt')) and not recalculate:
-    model = FinetunedCNN()
-    model.load_state_dict(torch.load(os.path.join(path, f'spec_model{model_version}.chpt')))
-else:
-    model = main()
-    torch.save(model.state_dict(), os.path.join(path, f'spec_model{model_version}.chpt'))
-    
-    model = FinetunedCNN()
-    model.load_state_dict(torch.load(os.path.join(path, f'spec_model{model_version}.chpt')))
+    recalculate = False
 
-model.eval()
+    if os.path.exists(os.path.join(path, f'spec_model{model_version}.chpt')) and not recalculate:
+        model = FinetunedCNN()
+        model.load_state_dict(torch.load(os.path.join(path, f'spec_model{model_version}.chpt')))
+    else:
+        model = main()
+        torch.save(model.state_dict(), os.path.join(path, f'spec_model{model_version}.chpt'))
+        
+        model = FinetunedCNN()
+        model.load_state_dict(torch.load(os.path.join(path, f'spec_model{model_version}.chpt')))
 
-
-def data_test(model, signal, ytrue):
-    pred = model(signal.view(signal.shape[0], 12, 5000))
-
-    for i, key in enumerate(pred):
-        accs[key].append(
-            pred[key].argmax(-1) == ytrue[key]
-        )
-    
-
-y_pred = []
-y_true = []
-
-accs = {
-    'NORM': [],
-    'IMI': [],
-    'ASMI': [],
-    'ILMI': [],
-    'AMI': [],
-    'ALMI': [],
-    'INJAS': [],
-    'LMI': [],
-    'INJAL': [],
-    'IPLMI': [],
-    'IPMI': [],
-    'INJIN': [],
-    'INJLA': [],
-    'PMI': [],
-    'INJIL': [],
-}
-i = 0
-for inputs, _, _, labels in val_loader:
-    data_test(model, inputs, labels)
+    model.eval()
 
 
-for i, key in enumerate(accs):
-    #print(accs[key])
-    accs[key] = torch.stack(accs[key]).float().sum()/len(accs[key])
+    def data_test(model, signal, ytrue):
+        pred = model(signal.view(signal.shape[0], 12, 5000))
 
-print(accs)
+        for i, key in enumerate(pred):
+            accs[key].append(
+                pred[key].argmax(-1) == ytrue[key]
+            )
+        
 
-# def multilabel_confusion_matrix(y_true, y_pred):
-#     y_true = np.array(y_true)
-#     y_pred = np.array(y_pred)
-#     assert y_true.shape == y_pred.shape, "Input shapes do not match"
-#     assert len(y_true.shape) == 2, "Input should be 2D arrays"
+    y_pred = []
+    y_true = []
 
-#     n_classes = y_true.shape[1]
-#     conf_mat = np.zeros((n_classes, n_classes))
-
-#     for i in range(n_classes):
-#         for j in range(n_classes):
-#             true_positives = np.sum((y_true[:, i] == 1) & (y_pred[:, j] == 1))
-#             false_positives = np.sum((y_true[:, i] == 0) & (y_pred[:, j] == 1))
-#             false_negatives = np.sum((y_true[:, i] == 1) & (y_pred[:, j] == 0))
-#             conf_mat[i, j] = true_positives, false_positives, false_negatives
-#     return conf_mat
-
-# # iterate over test data
-# for inputs, _, _, labels in val_loader:
-#     output = model(inputs.view(inputs.shape[0], 12, 5000)) # Feed Network
-
-#     output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
-#     y_pred.extend(output) # Save Prediction
-    
-#     labels = labels.data.cpu().numpy()
-#     y_true.extend(labels) # Save Truth
+    accs = {
+        'NORM': [],
+        'IMI': [],
+        'ASMI': [],
+        'ILMI': [],
+        'AMI': [],
+        'ALMI': [],
+        'INJAS': [],
+        'LMI': [],
+        'INJAL': [],
+        'IPLMI': [],
+        'IPMI': [],
+        'INJIN': [],
+        'INJLA': [],
+        'PMI': [],
+        'INJIL': [],
+    }
+    i = 0
+    for inputs, _, _, labels in val_loader:
+        data_test(model, inputs, labels)
 
 
-# conf_mat = multilabel_confusion_matrix(y_true, y_pred)
+    for i, key in enumerate(accs):
+        #print(accs[key])
+        accs[key] = torch.stack(accs[key]).float().sum()/len(accs[key])
 
-# df_cm = pd.DataFrame(conf_mat, range(23), range(23))
-# sn.set(font_scale=1.4)
-# sn.heatmap(df_cm, annot=True, annot_kws={"size": 16})
-# plt.show()
+    print(accs)
 
-# classes = (
-#     'NORM','STTC','NST_','IMI','AMI','LVH','LAFB/LPFB','ISC_','IRBBB','_AVB','IVCD','ISCA','CRBBB','CLBBB',
-#     'LAO/LAE','ISCI','LMI','RVH','RAO/RAE','WPW','ILBBB','SEHYP','PMI')
-# cf_matrix = confusion_matrix(y_true, y_pred)
-# df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index = [i for i in classes],
-#                      columns = [i for i in classes])
-# plt.figure(figsize = (12,7))
-# sn.heatmap(df_cm, annot=True)
-# plt.show()
+    # def multilabel_confusion_matrix(y_true, y_pred):
+    #     y_true = np.array(y_true)
+    #     y_pred = np.array(y_pred)
+    #     assert y_true.shape == y_pred.shape, "Input shapes do not match"
+    #     assert len(y_true.shape) == 2, "Input should be 2D arrays"
+
+    #     n_classes = y_true.shape[1]
+    #     conf_mat = np.zeros((n_classes, n_classes))
+
+    #     for i in range(n_classes):
+    #         for j in range(n_classes):
+    #             true_positives = np.sum((y_true[:, i] == 1) & (y_pred[:, j] == 1))
+    #             false_positives = np.sum((y_true[:, i] == 0) & (y_pred[:, j] == 1))
+    #             false_negatives = np.sum((y_true[:, i] == 1) & (y_pred[:, j] == 0))
+    #             conf_mat[i, j] = true_positives, false_positives, false_negatives
+    #     return conf_mat
+
+    # # iterate over test data
+    # for inputs, _, _, labels in val_loader:
+    #     output = model(inputs.view(inputs.shape[0], 12, 5000)) # Feed Network
+
+    #     output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
+    #     y_pred.extend(output) # Save Prediction
+        
+    #     labels = labels.data.cpu().numpy()
+    #     y_true.extend(labels) # Save Truth
+
+
+    # conf_mat = multilabel_confusion_matrix(y_true, y_pred)
+
+    # df_cm = pd.DataFrame(conf_mat, range(23), range(23))
+    # sn.set(font_scale=1.4)
+    # sn.heatmap(df_cm, annot=True, annot_kws={"size": 16})
+    # plt.show()
+
+    # classes = (
+    #     'NORM','STTC','NST_','IMI','AMI','LVH','LAFB/LPFB','ISC_','IRBBB','_AVB','IVCD','ISCA','CRBBB','CLBBB',
+    #     'LAO/LAE','ISCI','LMI','RVH','RAO/RAE','WPW','ILBBB','SEHYP','PMI')
+    # cf_matrix = confusion_matrix(y_true, y_pred)
+    # df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index = [i for i in classes],
+    #                      columns = [i for i in classes])
+    # plt.figure(figsize = (12,7))
+    # sn.heatmap(df_cm, annot=True)
+    # plt.show()
