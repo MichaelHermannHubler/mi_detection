@@ -178,7 +178,7 @@ def PTBXLReplaceScpCode(scp: str) -> pd.DataFrame:
 
     for key in ptb_info['Unnamed: 0']:
         try:
-            df[key] = [res[key]/100.0]
+            df[key] = [1 if res[key] > 0.5 else 0]
         except KeyError:
             df[key] = [0]
 

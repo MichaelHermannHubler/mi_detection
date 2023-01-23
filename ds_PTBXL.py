@@ -72,7 +72,7 @@ class PTBXLDataset(Dataset):
             return_signals = torch.stack(return_signals)
             return_sex = torch.stack(return_sex)
             return_age = torch.stack(return_age)
-            return_label = torch.stack(return_label)
+            #return_label = torch.stack(return_label)
 
             return return_signals, return_sex, return_age, return_label
         else:

@@ -31,6 +31,22 @@ class FinetunedCNN(nn.Module):
         self.conv7 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
         self.conv8 = utls.ConvolutionBlock(in_channels=32, out_channels=32) 
 
+        self.lin1 = nn.Sequential(      
+            nn.Dropout(p=0.2),
+            nn.Linear(192, 512),
+            nn.ReLU(),
+        )        
+        self.lin2 = nn.Sequential(      
+            nn.Dropout(p=0.2),
+            nn.Linear(512, 512),
+            nn.ReLU(),
+        )   
+        self.lin3 = nn.Sequential(      
+            nn.Dropout(p=0.2),
+            nn.Linear(512, 192),
+            nn.ReLU(),
+        )
+
         self.norm = utls.OutputBlock(in_channels=192, out_channels=2)
         self.imi = utls.OutputBlock(in_channels=192, out_channels=2)
         self.asmi = utls.OutputBlock(in_channels=192, out_channels=2)
@@ -60,6 +76,10 @@ class FinetunedCNN(nn.Module):
         x = self.conv8(x)
 
         x = x.view(x.size(0), -1)
+
+        x = self.lin1(x)
+        x = self.lin2(x)
+        x = self.lin3(x)
         
         return {
             'NORM': self.norm(x),
@@ -117,9 +137,6 @@ def test(model, train_loader, optimizer, loss_fun, device, epoch):
 def criterion(loss_func, outputs, labels, device):
   losses = 0
   for i, key in enumerate(outputs):
-    print(outputs)
-    print(labels)
-
     losses += loss_func(outputs[key], labels[key].to(device))
   return losses
 
@@ -146,9 +163,9 @@ def main():
         if 'conv1' in name or 'conv2' in name or 'conv3' in name or 'conv4' in name or 'conv5' in name:
             param.requiresGrad = False
 
-    print(model)
+    #print(model)
 
-    optimizer = optim.Adam(params=model.parameters(), lr=0.0005)
+    optimizer = optim.Adam(params=model.parameters(), lr=0.000005)
     loss_fun = nn.CrossEntropyLoss()
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -156,46 +173,28 @@ def main():
     
     tr_loss = []
     tr_acc = []
-    ev_loss = []
-    ev_acc = []
+    ev_loss = [0]
+    ev_acc = [0]
     for epoch in range(num_epochs):
         loss = train(model, train_loader, optimizer, loss_fun, device, epoch)
         tr_loss.append(loss)
                 
         # calculate accuracy
         model.eval()
-        N = 2000
+        N = 200
         x, _, _, label = dataset[:N] 
         x = x.view(N, 12, 5000) if model.is_conv else  x.view(N,-1) 
 
         x = x.to(device)
-        label = label.to(device)
         out = model(x)
         #out = torch.where(out < 0.5, torch.tensor(0).to(device), torch.tensor(1).to(device))
 
-        acc_ = utls.hamming_score(label, out)
+        #acc_ = utls.hamming_score(label, out)
         #acc_ = ((label & out).sum(axis=1) / (label | out).sum(axis=1)).mean()
-        #acc_ = (out == label).float().sum()/len(label)
-        acc_ = acc_.to('cpu')
-        tr_acc.append(acc_)
-
-
-        x, _, _, label = dataset[:N] 
-        x = x.view(N, 12, 5000) if model.is_conv else  x.view(N,-1)
-        model.eval()
-        
-        x = x.to(device)
-        label = label.to(device)
-        out = model(x)
-        #out = torch.where(out < 0.5, torch.tensor(0).to(device), torch.tensor(1).to(device))
-
-        acc_ = utls.hamming_score(label, out)
-        #acc_ = ((label & out).sum(axis=1) / (label | out).sum(axis=1)).mean()
-        #acc_ = (out == label).float().sum()/len(label)
-        acc_ = acc_.to('cpu')
-
-        ev_acc.append(acc_)
-        
+        #acc_ = (out.argmax(-1) == label).float().sum()/len(label)
+        #acc_ = acc_.to('cpu')
+        acc_ = 0
+        tr_acc.append(acc_)        
         
         print(f'epoch [{epoch+1}/{num_epochs}]: train loss = {loss:.8f}, train acc = {tr_acc[-1]:.5f}, val acc = {ev_acc[-1]:.5f}')    
 
@@ -220,7 +219,7 @@ train_loader, test_loader, val_loader = dataset.get_Loaders()
 path = "G:\\Projects\\MA"
 model_version = 1
 
-recalculate = True
+recalculate = False
 
 if os.path.exists(os.path.join(path, f'spec_model{model_version}.chpt')) and not recalculate:
     model = FinetunedCNN()
@@ -237,20 +236,43 @@ model.eval()
 
 def data_test(model, signal, ytrue):
     pred = model(signal.view(signal.shape[0], 12, 5000))
-    #pred = torch.argmax(pred)
-    # if pred != ytrue:
-    print('Prediction: ', pred, 'Real: ', ytrue)
+
+    for i, key in enumerate(pred):
+        accs[key].append(
+            pred[key].argmax(-1) == ytrue[key]
+        )
+    
 
 y_pred = []
 y_true = []
 
-
+accs = {
+    'NORM': [],
+    'IMI': [],
+    'ASMI': [],
+    'ILMI': [],
+    'AMI': [],
+    'ALMI': [],
+    'INJAS': [],
+    'LMI': [],
+    'INJAL': [],
+    'IPLMI': [],
+    'IPMI': [],
+    'INJIN': [],
+    'INJLA': [],
+    'PMI': [],
+    'INJIL': [],
+}
 i = 0
 for inputs, _, _, labels in val_loader:
-    if labels[0][0] == torch.tensor(0) and i < 10:
-        data_test(model, inputs, labels)
-        i = i+1
+    data_test(model, inputs, labels)
 
+
+for i, key in enumerate(accs):
+    #print(accs[key])
+    accs[key] = torch.stack(accs[key]).float().sum()/len(accs[key])
+
+print(accs)
 
 # def multilabel_confusion_matrix(y_true, y_pred):
 #     y_true = np.array(y_true)
