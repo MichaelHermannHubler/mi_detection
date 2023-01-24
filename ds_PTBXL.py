@@ -9,10 +9,12 @@ import wfdb
 import numpy as np
 
 class PTBXLDataset(Dataset):
-    def __init__(self):
+    def __init__(self, folds = [], labels = []):
         super().__init__()
         self.path = "G:\\Projects\\MA\\PTB-XL\\data"
         self.data = loadPTBXL()
+        self.folds = folds if len(folds) > 0 else range(1,10)
+        self.labels = labels if len(labels) > 0 else ['NORM', 'IMI', 'ASMI', 'ILMI', 'AMI', 'ALMI', 'INJAS', 'LMI', 'INJAL', 'IPLMI', 'IPMI', 'INJIN', 'INJLA', 'PMI', 'INJIL']
 
     def __len__(self):
         return len(self.data)
@@ -24,22 +26,28 @@ class PTBXLDataset(Dataset):
             sex = self.data['sex'][idx]
             age = self.data['age'][idx]
             label = {
-                'NORM': self.data['NORM'][idx],
-                'IMI': self.data['IMI'][idx],
-                'ASMI': self.data['ASMI'][idx],
-                'ILMI': self.data['ILMI'][idx],
-                'AMI': self.data['AMI'][idx],
-                'ALMI': self.data['ALMI'][idx],
-                'INJAS': self.data['INJAS'][idx],
-                'LMI': self.data['LMI'][idx],
-                'INJAL': self.data['INJAL'][idx],
-                'IPLMI': self.data['IPLMI'][idx],
-                'IPMI': self.data['IPMI'][idx],
-                'INJIN': self.data['INJIN'][idx],
-                'INJLA': self.data['INJLA'][idx],
-                'PMI': self.data['PMI'][idx],
-                'INJIL': self.data['INJIL'][idx]
+                'NORM': None,
+                'IMI': None,
+                'ASMI': None,
+                'ILMI': None,
+                'AMI': None,
+                'ALMI': None,
+                'INJAS': None,
+                'LMI': None,
+                'INJAL': None,
+                'IPLMI': None,
+                'IPMI': None,
+                'INJIN': None,
+                'INJLA': None,
+                'PMI': None,
+                'INJIL': None
             }
+
+            for key, value in label.items():
+                if key in self.labels:
+                    label[key] = self.data[key][idx]
+            
+            label = {k: v for k, v in label.items() if v is not None}
 
             if math.isnan(age):
                 age = 999
@@ -81,22 +89,28 @@ class PTBXLDataset(Dataset):
             sex = self.data['sex'][idx]
             age = self.data['age'][idx]
             label = {
-                'NORM': self.data['NORM'][idx],
-                'IMI': self.data['IMI'][idx],
-                'ASMI': self.data['ASMI'][idx],
-                'ILMI': self.data['ILMI'][idx],
-                'AMI': self.data['AMI'][idx],
-                'ALMI': self.data['ALMI'][idx],
-                'INJAS': self.data['INJAS'][idx],
-                'LMI': self.data['LMI'][idx],
-                'INJAL': self.data['INJAL'][idx],
-                'IPLMI': self.data['IPLMI'][idx],
-                'IPMI': self.data['IPMI'][idx],
-                'INJIN': self.data['INJIN'][idx],
-                'INJLA': self.data['INJLA'][idx],
-                'PMI': self.data['PMI'][idx],
-                'INJIL': self.data['INJIL'][idx]
+                'NORM': None,
+                'IMI': None,
+                'ASMI': None,
+                'ILMI': None,
+                'AMI': None,
+                'ALMI': None,
+                'INJAS': None,
+                'LMI': None,
+                'INJAL': None,
+                'IPLMI': None,
+                'IPMI': None,
+                'INJIN': None,
+                'INJLA': None,
+                'PMI': None,
+                'INJIL': None
             }
+
+            for key, value in label.items():
+                if key in self.labels:
+                    label[key] = self.data[key][idx]
+            
+            label = {k: v for k, v in label.items() if v is not None}
 
             if math.isnan(age):
                 age = 999
@@ -129,6 +143,6 @@ def display_first_10(dataset):
 if __name__=="__main__":
     print('Main')
     
-    dataset = PTBXLDataset()
+    dataset = PTBXLDataset(labels = ['NORM'])
     signal, _, _, label = dataset[1]
     print(label)
