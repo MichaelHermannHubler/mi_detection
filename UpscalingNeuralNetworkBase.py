@@ -17,9 +17,14 @@ import torch.nn as nn
 import torch
 
 # create the new model
-class FinetunedCNN(nn.Module):
+class UpscaleCNN(nn.Module):
     def __init__(self):
-        super(FinetunedCNN, self).__init__()
+        super(UpscaleCNN, self).__init__()
+
+        self.upscaler = nn.Sequential(         
+            nn.Conv1d(in_channels=6, out_channels=12, kernel_size=1, stride=1, padding=0),                
+            nn.ReLU()
+        )
 
         # initialize the same architecture as the existing CNN model
         self.conv1 = utls.ConvolutionBlock(in_channels=12, out_channels=32)
@@ -52,6 +57,8 @@ class FinetunedCNN(nn.Module):
         self.is_conv = True 
 
     def forward(self, x):
+        x = self.upscaler(x)
+
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
@@ -77,7 +84,7 @@ def train(model, train_loader, optimizer, loss_fun, device, epoch):
     for i, (signal, _, _, targets) in enumerate(train_loader):        
         bs = signal.shape[0]
             
-        x = signal.view(bs, 12, 5000)
+        x = signal.view(bs, 6, 5000)
         x = x.to(device)
             
         optimizer.zero_grad()
@@ -97,7 +104,7 @@ def test(model, train_loader, optimizer, loss_fun, device, epoch):
     for i, (signal, _, _, target) in enumerate(train_loader):
         bs = signal.shape[0]
             
-        x = signal.view(bs, 12, 5000)
+        x = signal.view(bs, 6, 5000)
         x = x.to(device)
         
         # TODO
@@ -116,10 +123,10 @@ def criterion(loss_func, outputs, labels, device):
 def main():
     num_epochs = 100
 
-    model = FinetunedCNN()
+    model = UpscaleCNN()
 
     # load the weights from the file
-    state_dict = torch.load("G:\\Projects\\MA\\" + 'model1.chpt')
+    state_dict = torch.load("G:\\Projects\\MA\\" + 'specbase_model1.chpt')    
 
     utls.loadConvolutionBlockLayer(state_dict, 'conv1', model.conv1)
     utls.loadConvolutionBlockLayer(state_dict, 'conv2', model.conv2)
@@ -129,13 +136,15 @@ def main():
     utls.loadConvolutionBlockLayer(state_dict, 'conv6', model.conv6)
     utls.loadConvolutionBlockLayer(state_dict, 'conv7', model.conv7)
     utls.loadConvolutionBlockLayer(state_dict, 'conv8', model.conv8)
+    loadLayer(state_dict, 'lin1.1.', model.lin1[1])
+    loadLayer(state_dict, 'lin2.1.', model.lin2[1])
+    loadLayer(state_dict, 'lin3.1.', model.lin3[1])
+    loadLayer(state_dict, 'norm.out.1.', model.norm.out[1])
 
     # freeze layers
     for name, param in model.named_parameters():
-        if 'conv1' in name or 'conv2' in name or 'conv3' in name or 'conv4' in name or 'conv5' in name:
+        if 'upscaler' not in name:
             param.requiresGrad = False
-
-    #print(model)
 
     optimizer = optim.Adam(params=model.parameters(), lr=0.000005)
     loss_fun = nn.CrossEntropyLoss()
@@ -155,7 +164,7 @@ def main():
         model.eval()
         N = 200
         x, _, _, label = dataset[:N] 
-        x = x.view(N, 12, 5000) if model.is_conv else  x.view(N,-1) 
+        x = x.view(N, 6, 5000) if model.is_conv else  x.view(N,-1) 
 
         x = x.to(device)
         out = model(x)
@@ -184,32 +193,33 @@ def main():
     return model
 
 def loadLayer(state_dict, layerName, layer):
-    layer.weight = state_dict[layerName + 'weight']
-    layer.bias = state_dict[layerName + 'bias']
+    layer.weight = torch.nn.Parameter(state_dict[layerName + 'weight'])
+    layer.bias = torch.nn.Parameter(state_dict[layerName + 'bias'])
 
 
 if __name__=="__main__":
-    dataset = PTBXLDataset(labels = ['NORM'])
-    train_loader, test_loader, val_loader = dataset.get_Loaders()
     path = "G:\\Projects\\MA"
     model_version = 1
 
+    dataset = PTBXLDataset(labels = ['NORM'], leads=range(6))
+    train_loader, test_loader, val_loader = dataset.get_Loaders()
+
     recalculate = False
 
-    if os.path.exists(os.path.join(path, f'specbase_model{model_version}.chpt')) and not recalculate:
-        model = FinetunedCNN()
-        model.load_state_dict(torch.load(os.path.join(path, f'specbase_model{model_version}.chpt')))
+    if os.path.exists(os.path.join(path, f'upscalebase_model{model_version}.chpt')) and not recalculate:
+        model = UpscaleCNN()
+        model.load_state_dict(torch.load(os.path.join(path, f'upscalebase_model{model_version}.chpt')))
     else:
         model = main()
-        torch.save(model.state_dict(), os.path.join(path, f'specbase_model{model_version}.chpt'))
+        torch.save(model.state_dict(), os.path.join(path, f'upscalebase_model{model_version}.chpt'))
         
-        model = FinetunedCNN()
-        model.load_state_dict(torch.load(os.path.join(path, f'specbase_model{model_version}.chpt')))
+        model = UpscaleCNN()
+        model.load_state_dict(torch.load(os.path.join(path, f'upscalebase_model{model_version}.chpt')))
 
     model.eval()
 
     def data_test(model, signal, ytrue):
-        pred = model(signal.view(signal.shape[0], 12, 5000))
+        pred = model(signal.view(signal.shape[0], 6, 5000))
 
         for i, key in enumerate(pred):
             accs.append(

@@ -9,19 +9,22 @@ import wfdb
 import numpy as np
 
 class PTBXLDataset(Dataset):
-    def __init__(self, folds = [], labels = []):
+    def __init__(self, folds = [], labels = [], leads = []):
         super().__init__()
         self.path = "G:\\Projects\\MA\\PTB-XL\\data"
         self.data = loadPTBXL()
         self.folds = folds if len(folds) > 0 else range(1,10)
         self.labels = labels if len(labels) > 0 else ['NORM', 'IMI', 'ASMI', 'ILMI', 'AMI', 'ALMI', 'INJAS', 'LMI', 'INJAL', 'IPLMI', 'IPMI', 'INJIN', 'INJLA', 'PMI', 'INJIL']
+        self.leads = leads if len(leads) > 0 else range(12)
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
         if isinstance(idx, int):
-            signals = wfdb.rdsamp(os.path.join(self.path, self.data['filename_hr'][idx]))[0][:,:5000]
+            signals = wfdb.rdsamp(os.path.join(self.path, self.data['filename_hr'][idx]))
+
+            signals = signals[0][:5000,self.leads]
             # extract the signals and labels from the mat file
             sex = self.data['sex'][idx]
             age = self.data['age'][idx]
@@ -84,7 +87,8 @@ class PTBXLDataset(Dataset):
 
             return return_signals, return_sex, return_age, return_label
         else:
-            signals = wfdb.rdsamp(os.path.join(self.path, self.data['filename_hr'][idx]))[0][:,:5000]
+            signals = wfdb.rdsamp(os.path.join(self.path, self.data['filename_hr'][idx]))
+            signals = signals[0][:5000,self.leads]
             # extract the signals and labels from the mat file
             sex = self.data['sex'][idx]
             age = self.data['age'][idx]
@@ -143,6 +147,6 @@ def display_first_10(dataset):
 if __name__=="__main__":
     print('Main')
     
-    dataset = PTBXLDataset(labels = ['NORM'])
+    dataset = PTBXLDataset(labels = ['NORM'], leads=range(6))
     signal, _, _, label = dataset[1]
-    print(label)
+    print(signal.shape)

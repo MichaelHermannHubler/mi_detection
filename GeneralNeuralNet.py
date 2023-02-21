@@ -1,4 +1,5 @@
 from ds_CPSC2018 import *
+import Utils as utls
 
 import torch.nn as nn
 import seaborn as sn
@@ -26,8 +27,20 @@ class CNN(nn.Module):
         self.conv8 = utls.ConvolutionBlock(in_channels=32, out_channels=32) 
         
         # fully connected layer, output 2 classes
-        self.out = nn.Linear(192, 2)
+        #self.out = nn.Linear(1216, 2) # 8
         
+        self.lin1 = nn.Sequential(      
+            nn.Dropout(p=0.2),
+            nn.Linear(288, 512),
+            nn.ReLU(),
+        )    
+        self.lin2 = nn.Sequential(      
+            nn.Dropout(p=0.2),
+            nn.Linear(512, 128),
+            nn.ReLU(),
+        )    
+        self.out = nn.Linear(128, 2)
+
         self.is_conv = True
         
     def forward(self, x):
@@ -39,8 +52,12 @@ class CNN(nn.Module):
         x = self.conv6(x)
         x = self.conv7(x)
         x = self.conv8(x)
+
         # flatten the output of conv2 to (batch_size, 32 * 7 * 7)
-        x = x.view(x.size(0), -1)       
+        x = x.view(x.size(0), -1)    
+        x = self.lin1(x)
+        x = self.lin2(x)
+
         output = self.out(x)
         return output 
 
@@ -176,7 +193,7 @@ def main():
 dataset = CPSC2018Dataset()
 train_loader, test_loader, val_loader = dataset.get_Loaders()
 path = "G:\\Projects\\MA"
-model_version = 4
+model_version = 1
 
 
 if os.path.exists(os.path.join(path, f'model{model_version}.chpt')):
@@ -187,7 +204,7 @@ else:
     torch.save(model.state_dict(), os.path.join(path, f'model{model_version}.chpt'))
 
 model.eval()
-
+model.to('cpu')
 
 def data_test(model, signal, ytrue):
     pred = model(signal.view(signal.shape[0], 12, 5000))

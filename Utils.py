@@ -351,14 +351,17 @@ def convertSNOMEDCTCodeToBinaryLabel(code: int) -> int:
 class ConvolutionBlock(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super(ConvolutionBlock, self).__init__()
-        self.conv = nn.Sequential(         
-            nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=2, padding=10),                
-            nn.ReLU(),                      
-            nn.MaxPool1d(kernel_size=2),    
-            nn.BatchNorm1d(out_channels)
-        )
+        self.conv = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, stride=3, padding=10)
+        self.relu = nn.ReLU()
+        self.batchNorm = nn.BatchNorm1d(out_channels)
+
+    #TODO init weights
+
     def forward(self, x):
         x = self.conv(x)
+        x = self.relu(x)
+        x = self.batchNorm(x)
+
         return x
 
 class OutputBlock(torch.nn.Module):
@@ -369,6 +372,9 @@ class OutputBlock(torch.nn.Module):
             nn.Linear(in_channels, out_channels),
             nn.Sigmoid()
         )
+    
+    #TODO init weights
+
     def forward(self, x):
         x = self.out(x)
         return x
@@ -380,6 +386,13 @@ def hamming_score(y_true, y_pred, normalize=True):
     if normalize:
         score /= y_true.size(0)
     return score
+
+def loadConvolutionBlockLayer(state_dict, layerName, layer):
+    layer.conv.weight = torch.nn.Parameter(state_dict[layerName + '.conv.weight'])
+    layer.conv.bias = torch.nn.Parameter(state_dict[layerName + '.conv.bias'])
+    
+    layer.batchNorm.weight = torch.nn.Parameter(state_dict[layerName + '.batchNorm.weight'])
+    layer.batchNorm.bias = torch.nn.Parameter(state_dict[layerName + '.batchNorm.bias'])
 
 if __name__=="__main__":
     print('Main')
