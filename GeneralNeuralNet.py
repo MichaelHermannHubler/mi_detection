@@ -1,4 +1,4 @@
-from ds_CPSC2018 import *
+from ds_General import *
 import Utils as utls
 
 import torch.nn as nn
@@ -61,7 +61,6 @@ class CNN(nn.Module):
         output = self.out(x)
         return output 
 
-
 def train(model, train_loader, optimizer, loss_fun, device, epoch):
     # TODO adapt code below
     model.train()
@@ -96,7 +95,6 @@ def train(model, train_loader, optimizer, loss_fun, device, epoch):
         # update
         optimizer.step()
     return loss.item()
-
 
 def test(model, train_loader, optimizer, loss_fun, device, epoch):
     # TODO: adapt code beolow
@@ -190,10 +188,10 @@ def main():
 
     return model
 
-dataset = CPSC2018Dataset()
+dataset = GeneralDataset()
 train_loader, test_loader, val_loader = dataset.get_Loaders()
-path = "G:\\Projects\\MA"
-model_version = 1
+path = "G:\\Projects\\MA\\models\\"
+model_version = 2
 
 
 if os.path.exists(os.path.join(path, f'model{model_version}.chpt')):
