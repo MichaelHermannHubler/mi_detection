@@ -10,11 +10,15 @@ import os
 import numpy as np
 
 from torch.nn import CrossEntropyLoss
+from tqdm import tqdm, trange
 
 from sklearn.metrics import confusion_matrix
 
+
+torch.set_printoptions(precision=20)
+
 class CNN(nn.Module):
-    def __init__(self, input_dim):
+    def __init__(self):
         super(CNN, self).__init__()
         
         self.conv1 = utls.ConvolutionBlock(in_channels=12, out_channels=32)
@@ -61,22 +65,17 @@ class CNN(nn.Module):
         output = self.out(x)
         return output 
 
-def train(model, train_loader, optimizer, loss_fun, device, epoch):
-    # TODO adapt code below
+def train(model, train_loader, optimizer, loss_fun, device):
     model.train()
     
-    n_batches = len(train_loader)
-    for i, (signal, _, _, targets) in enumerate(train_loader):
-        
+    for i, (signal, _, _, targets) in enumerate(tqdm(train_loader, desc='Train')):
         signal = signal.to(device)
         targets = targets.to(device)
 
         # get batch size
         bs = signal.shape[0]
-        # print(i, bs)
             
         # fully connected model: we need to flatten the signals
-
         x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 5000)
             
         # signal to device
@@ -89,49 +88,50 @@ def train(model, train_loader, optimizer, loss_fun, device, epoch):
         out = model(x)
             
         # calc loss and gradients
+
+        # print(signal)
+        # print(out)
+        # print(targets)
+
         loss = loss_fun(out, targets).mean()
         loss.backward()
+
+        # print(loss)
+        #raise ValueError('A very specific bad thing happened.')
             
         # update
         optimizer.step()
+
+    #print(loss)
     return loss.item()
 
-def test(model, train_loader, optimizer, loss_fun, device, epoch):
-    # TODO: adapt code beolow
-    model.train()
-    
-    n_batches = len(train_loader)
-    for i, (signal, _, _, target) in enumerate(train_loader):
-        # get batch size
+def test(model, test_loader, device):
+    model.eval()    
+
+    accs = []
+    for i, (signal, _, _, targets) in enumerate(tqdm(test_loader, desc='Test')):
+        signal = signal.to(device)
+        targets = targets.to(device)
+        
         bs = signal.shape[0]
-            
-        # fully connected model: we need to flatten the signals
-        x = signal.view(bs, -1) if not model.is_conv else signal.view(bs, 12, 5000)
-            
-        # signal to device
+
+        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 5000)
         x = x.to(device)
-            
-        # zero grads
-        optimizer.zero_grad()
-            
-        # forward pass
+
         out = model(x)
-            
-        # calc loss and gradients
-        loss = loss_fun(out, target).mean()
-        loss.backward()
-            
-        # update
-        optimizer.step()
-    return loss.item()
+        acc_ = (out.argmax(-1) == targets).float().sum()/len(targets)
+
+        accs.append(acc_)
+
+    acc = sum(accs)/len(accs)
+
+    return acc
 
 def main():
     num_epochs = 100
-    model = CNN((12,7500))
+    model = CNN()
 
-    print(model)
-
-    optimizer = optim.Adam(params=model.parameters(),lr=0.0005)
+    optimizer = optim.Adam(params=model.parameters(),lr=0.00005)
     ce_loss = CrossEntropyLoss()
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -139,41 +139,28 @@ def main():
     
     tr_loss = []
     tr_acc = []
-    ev_loss = []
     ev_acc = []
     for epoch in range(num_epochs):
-        loss = train(model, train_loader, optimizer, ce_loss, device, epoch)
+        loss = train(model, train_loader, optimizer, ce_loss, device)
         tr_loss.append(loss)
                 
-        # calculate accuracy
-        model.eval()
-        N = 2000
-        x, _, _, label = dataset[:N] 
-        x = x.view(N, 12, 5000) if model.is_conv else  x.view(N,-1) 
-
-        x = x.to(device)
-        label = label.to(device)
-        out = model(x)
-        acc_ = (out.argmax(-1) == label).float().sum()/len(label)
-        acc_ = acc_.to('cpu')
-        tr_acc.append(acc_)
-
-
-        x, _, _, label = dataset[:N] 
-        x = x.view(N, 12, 5000) if model.is_conv else  x.view(N,-1)
-        model.eval()
+        # # calculate accuracy
+        # model.eval()
         
-        x = x.to(device)
-        label = label.to(device)
-        out = model(x)
+        # N = 2000
+        # x, _, _, label = dataset[:N] 
+        # x = x.view(N, 12, 5000) if model.is_conv else  x.view(N,-1) 
 
-        acc_ = (out.argmax(-1) == label).float().sum()/len(label)
-        acc_ = acc_.to('cpu')
+        # x = x.to(device)
+        # label = label.to(device)
+        # out = model(x)
+        # acc_ = (out.argmax(-1) == label).float().sum()/len(label)
+        # acc_ = acc_.to('cpu')
+        acc = test(model, test_loader, device)
 
-        ev_acc.append(acc_)
+        tr_acc.append(acc)        
         
-        
-        print(f'epoch [{epoch+1}/{num_epochs}]: train loss = {loss:.8f}, train acc = {tr_acc[-1]:.5f}, val acc = {ev_acc[-1]:.5f}')
+        print(f'epoch [{epoch+1}/{num_epochs}]: train loss = {loss:.8f}, train acc = {tr_acc[-1]:.5f}')
     
 
     plt.plot(tr_loss, label='train loss')
@@ -195,38 +182,43 @@ model_version = 2
 
 
 if os.path.exists(os.path.join(path, f'model{model_version}.chpt')):
-    model = CNN((12,7500))
+    model = CNN()
     model.load_state_dict(torch.load(os.path.join(path, f'model{model_version}.chpt')))
-else:
+else:    
+    # for i, (signal, _, _, targets) in enumerate(tqdm(train_loader, desc='Merkwürdiges Verhalten')):
+    #     print(signal)
+    #     print(targets)
+    #     break
+
     model = main()
     torch.save(model.state_dict(), os.path.join(path, f'model{model_version}.chpt'))
 
-model.eval()
-model.to('cpu')
+# model.eval()
+# model.to('cpu')
 
-def data_test(model, signal, ytrue):
-    pred = model(signal.view(signal.shape[0], 12, 5000))
-    pred = torch.argmax(pred)
-    if pred != ytrue:
-        print('Prediction: ', pred, 'Real: ', ytrue)
+# def data_test(model, signal, ytrue):
+#     pred = model(signal.view(signal.shape[0], 12, 5000))
+#     pred = torch.argmax(pred)
+#     if pred != ytrue:
+#         print('Prediction: ', pred, 'Real: ', ytrue)
 
-y_pred = []
-y_true = []
+# y_pred = []
+# y_true = []
 
-# iterate over test data
-for inputs, _, _, labels in val_loader:
-    output = model(inputs.view(inputs.shape[0], 12, 5000)) # Feed Network
+# # iterate over test data
+# for inputs, _, _, labels in val_loader:
+#     output = model(inputs.view(inputs.shape[0], 12, 5000)) # Feed Network
 
-    output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
-    y_pred.extend(output) # Save Prediction
+#     output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
+#     y_pred.extend(output) # Save Prediction
     
-    labels = labels.data.cpu().numpy()
-    y_true.extend(labels) # Save Truth
+#     labels = labels.data.cpu().numpy()
+#     y_true.extend(labels) # Save Truth
 
-classes = ('Normal', 'Abnormal')
-cf_matrix = confusion_matrix(y_true, y_pred)
-df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index = [i for i in classes],
-                     columns = [i for i in classes])
-plt.figure(figsize = (12,7))
-sn.heatmap(df_cm, annot=True)
-plt.show()
+# classes = ('Normal', 'Abnormal')
+# cf_matrix = confusion_matrix(y_true, y_pred)
+# df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index = [i for i in classes],
+#                      columns = [i for i in classes])
+# plt.figure(figsize = (12,7))
+# sn.heatmap(df_cm, annot=True)
+# plt.show()

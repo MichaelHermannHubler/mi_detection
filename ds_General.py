@@ -4,8 +4,9 @@ import math
 from Utils import *
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import normalize
 from scipy.signal import resample
-
+from tqdm import tqdm
 
 class GeneralDataset(Dataset):
     def __init__(self, include_sex = False, include_age = False):
@@ -21,7 +22,7 @@ class GeneralDataset(Dataset):
 
     def __getitem__(self, idx):
         if isinstance(idx, int):
-            signals = self.getSignal(self.data['fileName'][idx], self.data['source'][idx])
+            signals = getSignal(self.data['fileName'][idx], self.data['source'][idx])
 
             if self.include_sex:
                 sex = self.data['sex'][idx]
@@ -71,7 +72,7 @@ class GeneralDataset(Dataset):
 
             return return_signals, return_sex, return_age, return_label
         else:
-            signals = self.getSignal(self.data['fileName'][idx], self.data['source'][idx])
+            signals = getSignal(self.data['fileName'][idx], self.data['source'][idx])
 
             if self.include_sex:
                 sex = self.data['sex'][idx]
@@ -100,11 +101,11 @@ class GeneralDataset(Dataset):
         train_size = int(0.7 * len(self))
         test_size = int(0.15 * len(self))
         val_size = len(self) - train_size - test_size
-        train_data, test_data, val_data = torch.utils.data.random_split(self, [train_size, test_size, val_size])
+        train_data, test_data, val_data = torch.utils.data.random_split(self, [train_size, test_size, val_size], generator=torch.Generator().manual_seed(42))
 
 
-        return DataLoader(dataset=train_data, batch_size=32, shuffle=True), \
-            DataLoader(dataset=test_data, batch_size=32, shuffle=True), \
+        return DataLoader(dataset=train_data, batch_size=512, shuffle=True), \
+            DataLoader(dataset=test_data, batch_size=512, shuffle=True), \
             DataLoader(dataset=val_data, batch_size=1, shuffle=True)
     
     def initData(self) -> pd.DataFrame:
@@ -113,18 +114,40 @@ class GeneralDataset(Dataset):
 
         dataCode = loadCode15()
         dataCode['source'] = 'C15'
+        # Reduce size for Performance reasons
+        dataCode = dataCode.sample(n=int(len(dataChap) / 10), random_state=42)
 
         dataCPSC = loadCPSC2018()
         dataCPSC['source'] = 'CP'
 
+        # remove "unclean Data"
+        dataCPSC['Signal_Length'] = dataCPSC.apply(getSignalLength, axis = 1)
+        dataCPSC = dataCPSC[dataCPSC['Signal_Length'] >= 5000]
+        dataCPSC.reset_index(drop=True, inplace=True)
+        dataCPSC.drop(columns=['Signal_Length'], inplace=True)
+
         dataCPSCExtra = loadCPSC2018Extra()
         dataCPSCExtra['source'] = 'CPE'
+
+        # remove "unclean Data"
+        dataCPSCExtra['Signal_Length'] = dataCPSCExtra.apply(getSignalLength, axis = 1)
+        dataCPSCExtra = dataCPSCExtra[dataCPSCExtra['Signal_Length'] >= 5000]
+        dataCPSCExtra.reset_index(drop=True, inplace=True)
+        dataCPSCExtra.drop(columns=['Signal_Length'], inplace=True)
 
         dataGeorgia = loadGeorgia()
         dataGeorgia['source'] = 'GE'
 
+        # remove "unclean Data"
+        dataGeorgia['Signal_Length'] = dataGeorgia.apply(getSignalLength, axis = 1)
+        dataGeorgia = dataGeorgia[dataGeorgia['Signal_Length'] >= 5000]
+        dataGeorgia.reset_index(drop=True, inplace=True)
+        dataGeorgia.drop(columns=['Signal_Length'], inplace=True)
+
         dataNingbo = loadNingbo()
         dataNingbo['source'] = 'NI'
+        # Reduce size for Performance reasons
+        dataChap = dataChap.sample(n=int(len(dataChap) / 2), random_state=42)
 
         df = pd.concat([dataChap, dataCode, dataCPSC, dataCPSCExtra, dataGeorgia, dataNingbo])
 
@@ -156,7 +179,7 @@ class GeneralDataset(Dataset):
         
         return df_balanced
     
-    def getSignal(self, path : str, source : str) -> np.ndarray:
+def getSignal(path : str, source : str) -> np.ndarray:
         if source == 'C15':
             exam, file = path.split('@')
             signal = getTracingFromH5(exam, file)
@@ -173,8 +196,10 @@ class GeneralDataset(Dataset):
             mat = scipy.io.loadmat(path)
             signal = mat['val'][:,:5000]
 
-        max_val = np.max(np.abs(signal))
-        signal = signal / max_val
+        # max_val = np.max(np.abs(signal))
+        # signal = signal / np.linalg.norm(signal)
+        
+        signal = normalize(signal)
 
         return signal
     
@@ -205,10 +230,10 @@ def display_first_10(dataset):
         print("Age: ", age)
         print("Labels: ", label)
 
+def getSignalLength(row: pd.Series) -> Tuple[str, int]:
+    return getSignal(row['fileName'], row['source']).size/12
 
 if __name__=="__main__":
-    ds = GeneralDataset()    
-
     dataChap = loadChapmanShaoxing()
     dataChap['source'] = 'CS'
 
@@ -218,11 +243,29 @@ if __name__=="__main__":
     dataCPSC = loadCPSC2018()
     dataCPSC['source'] = 'CP'
 
+    # remove "unclean Data"
+    dataCPSC['Signal_Length'] = dataCPSC.apply(getSignalLength, axis = 1)
+    dataCPSC = dataCPSC[dataCPSC['Signal_Length'] >= 5000]
+    dataCPSC.reset_index(drop=True, inplace=True)
+    dataCPSC.drop(columns=['Signal_Length'], inplace=True)
+
     dataCPSCExtra = loadCPSC2018Extra()
     dataCPSCExtra['source'] = 'CPE'
 
+    # remove "unclean Data"
+    dataCPSCExtra['Signal_Length'] = dataCPSCExtra.apply(getSignalLength, axis = 1)
+    dataCPSCExtra = dataCPSCExtra[dataCPSCExtra['Signal_Length'] >= 5000]
+    dataCPSCExtra.reset_index(drop=True, inplace=True)
+    dataCPSCExtra.drop(columns=['Signal_Length'], inplace=True)
+
     dataGeorgia = loadGeorgia()
     dataGeorgia['source'] = 'GE'
+
+    # remove "unclean Data"
+    dataGeorgia['Signal_Length'] = dataGeorgia.apply(getSignalLength, axis = 1)
+    dataGeorgia = dataGeorgia[dataGeorgia['Signal_Length'] >= 5000]
+    dataGeorgia.reset_index(drop=True, inplace=True)
+    dataGeorgia.drop(columns=['Signal_Length'], inplace=True)
 
     dataNingbo = loadNingbo()
     dataNingbo['source'] = 'NI'
@@ -232,10 +275,9 @@ if __name__=="__main__":
     df.drop(['sex'], axis=1, inplace=True)
     df.drop(['age'], axis=1, inplace=True)
     df.dropna(inplace=True)
-
-    for index, row in df.iterrows():
-        signal = ds.getSignal(row['fileName'], row['source'])
+    
+    tqdm.pandas()
+    for index, row in tqdm(df.iterrows(), total=df.shape[0]):
+        signal = getSignal(row['fileName'], row['source'])
         if signal.shape[0] != 12 or signal.shape[1] < 5000:
-            print(row)
-            print(ds.getSignal(row['fileName'], row['source']).T.shape)
-            break
+            print(row['fileName'])
