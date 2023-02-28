@@ -8,15 +8,20 @@ import json
 import os
 import torch
 import torch.nn as nn
+import h5py
+import numpy as np
 
-rootDirPath = 'G:\\Projects\\MA\\'
+rootDirPath = 'G:\\Projects\\MA\\data\\'
 
 def loadCode15() -> pd.DataFrame:
     path = rootDirPath + 'Code-15/exams.csv'
     meta = pd.read_csv(path)
-    meta['sex'] = 'Male'
-    meta.loc[meta['is_male'] == False, 'sex'] = 'Female'
-    meta = meta.drop(columns=['nn_predicted_age', '1dAVb', 'RBBB', 'LBBB', 'SB', 'ST', 'AF', 'patient_id', 'death', 'timey'])
+
+    meta['fileName'] = meta['exam_id'].astype(str) + '@' + f'{rootDirPath}\Code-15\exams\\' + meta['trace_file']
+    meta['sex'] = 0
+    meta.loc[meta['is_male'] == False, 'sex'] = 1
+    meta['diagnostics'] = (~meta['normal_ecg']).astype(int)
+    meta = meta.drop(columns=['nn_predicted_age', '1dAVb', 'RBBB', 'LBBB', 'SB', 'ST', 'AF', 'patient_id', 'death', 'timey', 'is_male', 'trace_file', 'exam_id', 'normal_ecg'])
     return meta
 
 def loadCPSC2018() -> pd.DataFrame:
@@ -27,12 +32,7 @@ def loadCPSC2018() -> pd.DataFrame:
         cpsc2018_meta = pd.read_csv(path)
         cpsc2018_meta_cleaned = cpsc2018_meta[['Recording', 'First_label']]
         
-        # reduce only to Elements with a size of 5000
-        cpsc2018_meta_cleaned['Signal_Length'] = cpsc2018_meta_cleaned.apply(getCPSC2018SignalLengthDataFromMatlab, axis = 1)
-        cpsc2018_meta_cleaned = cpsc2018_meta_cleaned[cpsc2018_meta_cleaned['Signal_Length'] == 5000]
-        cpsc2018_meta_cleaned = cpsc2018_meta_cleaned.reset_index(drop=True)
-
-        cpsc2018_meta_cleaned['sex'] = cpsc2018_meta_cleaned.apply(getCPSC2018SexDataFromMatlab, axis = 1)
+        cpsc2018_meta_cleaned['sex'] = cpsc2018_meta_cleaned.apply(getCPSC2018SexDataFromMatlab, axis = 1)        
         cpsc2018_meta_cleaned['age'] = cpsc2018_meta_cleaned.apply(getCPSC2018AgeDataFromMatlab, axis = 1)
 
         # reduce outputs to normal (0), abnormal (1) as we dont need the detailed information
@@ -40,87 +40,117 @@ def loadCPSC2018() -> pd.DataFrame:
         cpsc2018_meta_cleaned.loc[cpsc2018_meta_cleaned['First_label'] > 1, 'First_label'] = 1
 
         cpsc2018_meta_cleaned.loc[cpsc2018_meta_cleaned['sex'] == 'Male', 'sex'] = 0
-        cpsc2018_meta_cleaned.loc[cpsc2018_meta_cleaned['sex'] != 'Male', 'sex'] = 1
+        cpsc2018_meta_cleaned.loc[cpsc2018_meta_cleaned['sex'] == 'Female', 'sex'] = 1
 
-        cpsc2018_meta_cleaned['label'] = cpsc2018_meta_cleaned['First_label']
-        cpsc2018_meta_cleaned.drop('First_label', axis=1, inplace=True)
-        cpsc2018_meta_cleaned.drop('Signal_Length', axis=1, inplace=True)
+        cpsc2018_meta_cleaned['diagnostics'] = cpsc2018_meta_cleaned['First_label']
+
+        cpsc2018_meta_cleaned['fileName'] = f'{rootDirPath}\cpsc2018\data\\' + cpsc2018_meta_cleaned['Recording'] + ".mat"
+
+        cpsc2018_meta_cleaned.drop(['Recording', 'First_label'], axis=1, inplace=True)
 
         cpsc2018_meta_cleaned.to_pickle(os.path.join(rootDirPath, "cpsc2018_data.pkl"))
 
     return cpsc2018_meta_cleaned
 
 def loadCPSC2018Extra() -> pd.DataFrame:
-    path = rootDirPath + 'physionetchallenge/cpsc2018-extra/data/WFDB_CPSC2018_2/'
+    if os.path.exists(os.path.join(rootDirPath, "cpsc2018-extra_data.pkl")):
+        meta = pd.read_pickle(os.path.join(rootDirPath, "cpsc2018-extra_data.pkl"))
+    else:
+        path = rootDirPath + 'cpsc2018-extra/data/WFDB_CPSC2018_2/'
 
-    fileNames = []
-    Ages = []
-    Sexes = []
-    Diagnostics = []
+        fileNames = []
+        Ages = []
+        Sexes = []
+        Diagnostics = []
 
-    for child in Path(path).glob('*.mat'):     
-        fileNames.append(child)
-        data = wfdb.rdsamp(os.path.splitext(child)[0])
-        Ages.append(data[1]['comments'][0].split(' ')[1])
-        Sexes.append(data[1]['comments'][1].split(' ')[1])
-        Diagnostics.append(convertSNOMEDCTCodeToBinaryLabel(data[1]['comments'][2].split(' ')[1].split(',')))
+        for child in Path(path).glob('*.mat'):     
+            fileNames.append(child)
+            data = wfdb.rdsamp(os.path.splitext(child)[0])
+            Ages.append(data[1]['comments'][0].split(' ')[1])
+            Sexes.append(data[1]['comments'][1].split(' ')[1])
+            Diagnostics.append(convertSNOMEDCTCodeToBinaryLabel(data[1]['comments'][2].split(' ')[1].split(',')))
 
-    meta = pd.DataFrame(data={'fileName':fileNames, 'age':Ages, 'sex':Sexes, 'diagnostics':Diagnostics})
-    meta.age = meta.age.astype('float')
+        meta = pd.DataFrame(data={'fileName':fileNames, 'age':Ages, 'sex':Sexes, 'diagnostics':Diagnostics})
+        meta.loc[meta['sex'] == 'Male', 'sex'] = 0
+        meta.loc[meta['sex'] == 'Female', 'sex'] = 1
+
+        meta.age = meta.age.astype('float')
+        meta.to_pickle(os.path.join(rootDirPath, "cpsc2018-extra_data.pkl"))
 
     return meta
 
 def loadChapmanShaoxing() -> Tuple[pd.DataFrame, pd.DataFrame]:
-    fileNames = []
-    Ages = []
-    Sexes = []
-    Diagnostics = []
+    if os.path.exists(os.path.join(rootDirPath, "chapman-shaoxing_data.pkl")):
+        meta = pd.read_pickle(os.path.join(rootDirPath, "chapman-shaoxing_data.pkl"))
+    else:
+        fileNames = []
+        Ages = []
+        Sexes = []
+        Diagnostics = []
 
-    for child in Path('../Datasets/physionetchallenge/chapman-shaoxing/data/').glob('*.mat'):     
-        fileNames.append(child)
-        data = wfdb.rdsamp(os.path.splitext(child)[0])
-        Ages.append(data[1]['comments'][0].split(' ')[1])
-        Sexes.append(data[1]['comments'][1].split(' ')[1])
-        Diagnostics.append(convertSNOMEDCTCodeToBinaryLabel(data[1]['comments'][2].split(' ')[1].split(',')))
+        for child in Path(rootDirPath + '/chapman-shaoxing/data/').glob('*.mat'):     
+            fileNames.append(child)
+            data = wfdb.rdsamp(os.path.splitext(child)[0])
+            Ages.append(data[1]['comments'][0].split(' ')[1])
+            Sexes.append(data[1]['comments'][1].split(' ')[1])
+            Diagnostics.append(convertSNOMEDCTCodeToBinaryLabel(data[1]['comments'][2].split(' ')[1].split(',')))
 
-    meta = pd.DataFrame(data={'fileName':fileNames, 'age':Ages, 'sex':Sexes, 'diagnostics':Diagnostics})
-    meta.age = meta.age.astype('float')
+        meta = pd.DataFrame(data={'fileName':fileNames, 'age':Ages, 'sex':Sexes, 'diagnostics':Diagnostics})
+        meta.loc[meta['sex'] == 'Male', 'sex'] = 0
+        meta.loc[meta['sex'] == 'Female', 'sex'] = 1
+
+        meta.age = meta.age.astype('float')
+        meta.to_pickle(os.path.join(rootDirPath, "chapman-shaoxing_data.pkl"))
 
     return meta
 
 def loadGeorgia() -> Tuple[pd.DataFrame, pd.DataFrame]:
-    fileNames = []
-    Ages = []
-    Sexes = []
-    Diagnostics = []
+    if os.path.exists(os.path.join(rootDirPath, "georgia_data.pkl")):
+        meta = pd.read_pickle(os.path.join(rootDirPath, "georgia_data.pkl"))
+    else:
+        fileNames = []
+        Ages = []
+        Sexes = []
+        Diagnostics = []
 
-    for child in Path('../Datasets/physionetchallenge/georgiachallenge/data/WFDB_Ga/').glob('*.mat'):     
-        fileNames.append(child)
-        data = wfdb.rdsamp(os.path.splitext(child)[0])
-        Ages.append(data[1]['comments'][0].split(' ')[1])
-        Sexes.append(data[1]['comments'][1].split(' ')[1])
-        Diagnostics.append(convertSNOMEDCTCodeToBinaryLabel(data[1]['comments'][2].split(' ')[1].split(',')))
+        for child in Path(rootDirPath + 'georgiachallenge/data/WFDB_Ga/').glob('*.mat'):     
+            fileNames.append(child)
+            data = wfdb.rdsamp(os.path.splitext(child)[0])
+            Ages.append(data[1]['comments'][0].split(' ')[1])
+            Sexes.append(data[1]['comments'][1].split(' ')[1])
+            Diagnostics.append(convertSNOMEDCTCodeToBinaryLabel(data[1]['comments'][2].split(' ')[1].split(',')))
 
-    meta = pd.DataFrame(data={'fileName':fileNames, 'age':Ages, 'sex':Sexes, 'diagnostics':Diagnostics})
-    meta.age = meta.age.astype('float')
+        meta = pd.DataFrame(data={'fileName':fileNames, 'age':Ages, 'sex':Sexes, 'diagnostics':Diagnostics})
+        meta.loc[meta['sex'] == 'Male', 'sex'] = 0
+        meta.loc[meta['sex'] == 'Female', 'sex'] = 1
+        
+        meta.age = meta.age.astype('float')
+        meta.to_pickle(os.path.join(rootDirPath, "georgia_data.pkl"))
 
     return meta
 
 def loadNingbo() -> Tuple[pd.DataFrame, pd.DataFrame]:
-    fileNames = []
-    Ages = []
-    Sexes = []
-    Diagnostics = []
+    if os.path.exists(os.path.join(rootDirPath, "ningbo_data.pkl")):
+        meta = pd.read_pickle(os.path.join(rootDirPath, "ningbo_data.pkl"))
+    else:
+        fileNames = []
+        Ages = []
+        Sexes = []
+        Diagnostics = []
 
-    for child in Path('../Datasets/physionetchallenge/ningbo/data/WFDB_Ningbo/').glob('*.mat'):     
-        fileNames.append(child)
-        data = wfdb.rdsamp(os.path.splitext(child)[0])
-        Ages.append(data[1]['comments'][0].split(' ')[1])
-        Sexes.append(data[1]['comments'][1].split(' ')[1])
-        Diagnostics.append(convertSNOMEDCTCodeToBinaryLabel(data[1]['comments'][2].split(' ')[1].split(',')))
+        for child in Path(rootDirPath + 'ningbo/data/WFDB_Ningbo/').glob('*.mat'):     
+            fileNames.append(child)
+            data = wfdb.rdsamp(os.path.splitext(child)[0])
+            Ages.append(data[1]['comments'][0].split(' ')[1])
+            Sexes.append(data[1]['comments'][1].split(' ')[1])
+            Diagnostics.append(convertSNOMEDCTCodeToBinaryLabel(data[1]['comments'][2].split(' ')[1].split(',')))
 
-    meta = pd.DataFrame(data={'fileName':fileNames, 'age':Ages, 'sex':Sexes, 'diagnostics':Diagnostics})
-    meta.age = meta.age.astype('float')
+        meta = pd.DataFrame(data={'fileName':fileNames, 'age':Ages, 'sex':Sexes, 'diagnostics':Diagnostics})
+        meta.loc[meta['sex'] == 'Male', 'sex'] = 0
+        meta.loc[meta['sex'] == 'Female', 'sex'] = 1
+        
+        meta.age = meta.age.astype('float')
+        meta.to_pickle(os.path.join(rootDirPath, "ningbo_data.pkl"))
 
     return meta
 
@@ -394,11 +424,51 @@ def loadConvolutionBlockLayer(state_dict, layerName, layer):
     layer.batchNorm.weight = torch.nn.Parameter(state_dict[layerName + '.batchNorm.weight'])
     layer.batchNorm.bias = torch.nn.Parameter(state_dict[layerName + '.batchNorm.bias'])
 
-if __name__=="__main__":
-    print('Main')
+def getTracingFromH5(exam_id, file_path):
+    with h5py.File(file_path, 'r') as f:
+        exam_ids = np.array(f['exam_id'][:])
+        idx = np.where(exam_ids == int(exam_id))[0][0]
+        tracing = f['tracings'][idx]
+    return tracing
 
-    #data = loadCode15()
-    data = loadPTBXL()
-    print(data.head(500))
+if __name__=="__main__":
+    print('Main Utils')
+
+    mat_contents = sio.loadmat(f'G:\Projects\MA\data\cpsc2018-extra\data\WFDB_CPSC2018_2\Q1479.mat')
+    print(mat_contents)
+    # print(getCPSC2018SexDataFromMatlab(pd.Series(data={'Recording':'A0001'})))
+    # print(getCPSC2018SexDataFromMatlab(pd.Series(data={'Recording':'A0002'})))
+
+
+    # filename = f"G:\Projects\MA\Code-15\exams\exams_part15.hdf5"
+    # with h5py.File(filename, "r") as f:
+    #     # Print all root level object names (aka keys) 
+    #     # these can be group or dataset names 
+    #     print("Keys: %s" % f.keys())
+    #     exam_ids = f['exam_id'][:]
+    #     idx = np.where(exam_ids == 1368336)[0][0]
+
+    #     tracing = f['tracings'][idx]
+    #     print(idx, tracing)
+    #     #print(f['exam_id'][:5])
+
+
+    #     # get first object name/key; may or may NOT be a group
+    #     # a_group_key = list(f.keys())[0]
+
+    #     # # get the object type for a_group_key: usually group or dataset
+    #     # print(type(f[a_group_key])) 
+
+    #     # # If a_group_key is a group name, 
+    #     # # this gets the object names in the group and returns as a list
+    #     # data = list(f[a_group_key])
+
+    #     # # If a_group_key is a dataset name, 
+    #     # # this gets the dataset values and returns as a list
+    #     # data = list(f[a_group_key])
+    #     # # preferred methods to get dataset values:
+    #     # ds_obj = f[a_group_key]      # returns as a h5py dataset object
+    #     # ds_arr = f[a_group_key][()]  # returns as a numpy array
+    
 
 
