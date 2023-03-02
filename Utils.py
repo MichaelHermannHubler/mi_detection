@@ -381,7 +381,7 @@ def convertSNOMEDCTCodeToBinaryLabel(code: int) -> int:
 class ConvolutionBlock(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super(ConvolutionBlock, self).__init__()
-        self.conv = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, stride=3, padding=10)
+        self.conv = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, stride=2, padding=3)
         self.relu = nn.ReLU()
         self.batchNorm = nn.BatchNorm1d(out_channels)
 

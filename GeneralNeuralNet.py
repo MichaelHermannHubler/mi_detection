@@ -10,9 +10,11 @@ import os
 import numpy as np
 
 from torch.nn import CrossEntropyLoss
-from tqdm import tqdm, trange
+from tqdm import tqdm
+from copy import deepcopy
 
 from sklearn.metrics import confusion_matrix
+import pickle
 
 
 torch.set_printoptions(precision=20)
@@ -21,28 +23,25 @@ class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
         
-        self.conv1 = utls.ConvolutionBlock(in_channels=12, out_channels=32)
-        self.conv2 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv3 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv4 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv5 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv6 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv7 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv8 = utls.ConvolutionBlock(in_channels=32, out_channels=32) 
-        
-        # fully connected layer, output 2 classes
-        #self.out = nn.Linear(1216, 2) # 8
-        
+        self.conv1 = utls.ConvolutionBlock(in_channels=12, out_channels=24)
+        self.conv2 = utls.ConvolutionBlock(in_channels=24, out_channels=24)
+        self.conv3 = utls.ConvolutionBlock(in_channels=24, out_channels=24)
+        self.conv4 = utls.ConvolutionBlock(in_channels=24, out_channels=36)
+        self.conv5 = utls.ConvolutionBlock(in_channels=36, out_channels=36)
+        self.conv6 = utls.ConvolutionBlock(in_channels=36, out_channels=36)
+        self.conv7 = utls.ConvolutionBlock(in_channels=36, out_channels=48)
+        self.conv8 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+        self.conv9 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+        # self.conv10 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+                
         self.lin1 = nn.Sequential(      
-            nn.Dropout(p=0.2),
-            nn.Linear(288, 512),
+            nn.Dropout(p=0.5),
+            # nn.Linear(1632, 128), # 7
+            nn.Linear(864, 128), # 8
+            # nn.Linear(480, 128), # 9
+            # nn.Linear(288, 128), # 10
             nn.ReLU(),
-        )    
-        self.lin2 = nn.Sequential(      
-            nn.Dropout(p=0.2),
-            nn.Linear(512, 128),
-            nn.ReLU(),
-        )    
+        )     
         self.out = nn.Linear(128, 2)
 
         self.is_conv = True
@@ -56,11 +55,12 @@ class CNN(nn.Module):
         x = self.conv6(x)
         x = self.conv7(x)
         x = self.conv8(x)
+        x = self.conv9(x)
+        # x = self.conv10(x)
 
-        # flatten the output of conv2 to (batch_size, 32 * 7 * 7)
+        # flatten the output of conv
         x = x.view(x.size(0), -1)    
         x = self.lin1(x)
-        x = self.lin2(x)
 
         output = self.out(x)
         return output 
@@ -76,7 +76,7 @@ def train(model, train_loader, optimizer, loss_fun, device):
         bs = signal.shape[0]
             
         # fully connected model: we need to flatten the signals
-        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 5000)
+        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 4000)
             
         # signal to device
         x = x.to(device)
@@ -115,11 +115,12 @@ def test(model, test_loader, device):
         
         bs = signal.shape[0]
 
-        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 5000)
+        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 4000)
         x = x.to(device)
 
         out = model(x)
         acc_ = (out.argmax(-1) == targets).float().sum()/len(targets)
+        acc_ = acc_.to('cpu')
 
         accs.append(acc_)
 
@@ -129,67 +130,78 @@ def test(model, test_loader, device):
 
 def main():
     num_epochs = 100
-    model = CNN()
+    num_folds = 10
+    
+    best_acc = 0
+    best_state = []
 
-    optimizer = optim.Adam(params=model.parameters(),lr=0.00005)
-    ce_loss = CrossEntropyLoss()
-    
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = model.to(device)
-    
-    tr_loss = []
-    tr_acc = []
-    ev_acc = []
-    for epoch in range(num_epochs):
-        loss = train(model, train_loader, optimizer, ce_loss, device)
-        tr_loss.append(loss)
-                
-        # # calculate accuracy
-        # model.eval()
+    for fold in range(num_folds):
+        print(f'Fold [{fold + 1}/{num_folds}]:')
+        model = CNN()
+
+        lr = 0.005
+        depth = 9
+
+        optimizer = optim.Adam(params=model.parameters(),lr=lr)
+        ce_loss = CrossEntropyLoss()
         
-        # N = 2000
-        # x, _, _, label = dataset[:N] 
-        # x = x.view(N, 12, 5000) if model.is_conv else  x.view(N,-1) 
-
-        # x = x.to(device)
-        # label = label.to(device)
-        # out = model(x)
-        # acc_ = (out.argmax(-1) == label).float().sum()/len(label)
-        # acc_ = acc_.to('cpu')
-        acc = test(model, test_loader, device)
-
-        tr_acc.append(acc)        
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        model = model.to(device)
         
-        print(f'epoch [{epoch+1}/{num_epochs}]: train loss = {loss:.8f}, train acc = {tr_acc[-1]:.5f}')
-    
+        tr_loss = []
+        tr_acc = []
+        te_acc = []
+        best_run_acc = 0
+        for epoch in range(num_epochs):
+            loss = train(model, train_loader, optimizer, ce_loss, device)
+            tr_loss.append(loss)
+            tr_acc.append(test(model, train_loader, device))
+            te_acc.append(test(model, test_loader, device))
 
-    plt.plot(tr_loss, label='train loss')
-    plt.legend()
-    plt.show()
-    
-    plt.plot(tr_acc, label='train accuracy')
-    plt.plot(ev_acc, label='eval accuracy')
-    plt.title('acc')
-    plt.legend()
-    plt.show()
+            if te_acc[-1] > best_run_acc:
+                best_run_acc = te_acc[-1]
+            
+            if te_acc[-1] > best_acc:
+                best_acc = te_acc[-1]
+                best_state = deepcopy(model.state_dict())
+            
+            print(f'epoch [{epoch+1}/{num_epochs}]: train loss = {loss:.8f}, train acc = {tr_acc[-1]:.5f}, test acc = {te_acc[-1]:.5f}, best run acc = {best_run_acc:.5f}, best acc = {best_acc:.5f}')
+        
+        plt.plot(tr_loss, label='train loss')
+        plt.legend()
+        plt.savefig(f'G:\Projects\MA\images\GNN\{depth}_Layers_{fold + 1}_Loss_lr{lr}.png')
+        plt.clf()
+        
+        plt.plot(tr_acc, label='train accuracy')
+        plt.plot(te_acc, label='test accuracy')
+        plt.legend()
+        plt.savefig(f'G:\Projects\MA\images\GNN\{depth}_Layers_{fold + 1}_Acc_lr{lr}.png')
+        plt.clf()
+
+        with open(f'G:\Projects\MA\\variables\GNN\{depth}_Layers_{fold + 1}_train_loss.pkl', 'wb') as f:
+            pickle.dump(tr_loss, f)
+            
+        with open(f'G:\Projects\MA\\variables\GNN\{depth}_Layers_{fold + 1}_train_acc.pkl', 'wb') as f:
+            pickle.dump(tr_acc, f)
+            
+        with open(f'G:\Projects\MA\\variables\GNN\{depth}_Layers_{fold + 1}_test_acc.pkl', 'wb') as f:
+            pickle.dump(te_acc, f)
+
+    print(f'Best test acc = {best_acc:.5f}')
+    model.load_state_dict(best_state)
 
     return model
 
 dataset = GeneralDataset()
 train_loader, test_loader, val_loader = dataset.get_Loaders()
 path = "G:\\Projects\\MA\\models\\"
-model_version = 2
+model_version = 1
 
 
-if os.path.exists(os.path.join(path, f'model{model_version}.chpt')):
+if os.path.exists(os.path.join(path, f'model{model_version}.chpt')) and 1 == 2:
     model = CNN()
     model.load_state_dict(torch.load(os.path.join(path, f'model{model_version}.chpt')))
 else:    
-    # for i, (signal, _, _, targets) in enumerate(tqdm(train_loader, desc='Merkwürdiges Verhalten')):
-    #     print(signal)
-    #     print(targets)
-    #     break
-
     model = main()
     torch.save(model.state_dict(), os.path.join(path, f'model{model_version}.chpt'))
 

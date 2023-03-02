@@ -4,16 +4,17 @@ import math
 from Utils import *
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import normalize
+from sklearn.preprocessing import MinMaxScaler
 from scipy.signal import resample
 from tqdm import tqdm
 
 class GeneralDataset(Dataset):
-    def __init__(self, include_sex = False, include_age = False):
+    def __init__(self, include_sex = False, include_age = False, overfit_samples=-1):
         super().__init__()
         self.path = "G:\\Projects\\MA\\"
         self.include_sex = include_sex
         self.include_age = include_age
+        self.overfit_samples = overfit_samples
 
         self.data = self.initData()
 
@@ -104,8 +105,8 @@ class GeneralDataset(Dataset):
         train_data, test_data, val_data = torch.utils.data.random_split(self, [train_size, test_size, val_size], generator=torch.Generator().manual_seed(42))
 
 
-        return DataLoader(dataset=train_data, batch_size=512, shuffle=True), \
-            DataLoader(dataset=test_data, batch_size=512, shuffle=True), \
+        return DataLoader(dataset=train_data, batch_size=64, shuffle=True), \
+            DataLoader(dataset=test_data, batch_size=64, shuffle=True), \
             DataLoader(dataset=val_data, batch_size=1, shuffle=True)
     
     def initData(self) -> pd.DataFrame:
@@ -175,8 +176,12 @@ class GeneralDataset(Dataset):
         # Concatenate the two dataframes into a single, balanced dataframe
         df_balanced = pd.concat([df_0_sampled, df_1_sampled])
 
+        # Small Sample to overfit
+        if self.overfit_samples > 1:
+            df_balanced = df_balanced.sample(n=self.overfit_samples, random_state=42)
+
         df_balanced.reset_index(inplace=True)
-        
+                
         return df_balanced
     
 def getSignal(path : str, source : str) -> np.ndarray:
@@ -186,20 +191,20 @@ def getSignal(path : str, source : str) -> np.ndarray:
             # transform from (4096, 12) to (12, 4096)
             signal = signal.T
             # Upsample, as the data is only taken in 400Hz instead of 500Hz
-            signal = upsample_array(signal)[:,:5000]
+            signal = upsample_array(signal)[:,500:4500]
 
         if source == "CP":
             mat = scipy.io.loadmat(path)
-            signal =  mat['ECG'][0][0][2][:,:5000]
+            signal =  mat['ECG'][0][0][2][:,500:4500]
         
         if source in ('CPE', 'CS', 'GE', 'NI'):
             mat = scipy.io.loadmat(path)
-            signal = mat['val'][:,:5000]
+            signal = mat['val'][:,500:4500]
 
         # max_val = np.max(np.abs(signal))
         # signal = signal / np.linalg.norm(signal)
-        
-        signal = normalize(signal)
+
+        # signal = normalize(signal)
 
         return signal
     
