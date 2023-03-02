@@ -383,13 +383,14 @@ class ConvolutionBlock(torch.nn.Module):
         super(ConvolutionBlock, self).__init__()
         self.conv = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, stride=2, padding=3)
         self.relu = nn.ReLU()
+        self.drop_layer = nn.Dropout(p=0.1),
         self.batchNorm = nn.BatchNorm1d(out_channels)
 
-    #TODO init weights
 
     def forward(self, x):
         x = self.conv(x)
         x = self.relu(x)
+        x = self.drop_layer(x)
         x = self.batchNorm(x)
 
         return x

@@ -31,15 +31,15 @@ class CNN(nn.Module):
         self.conv6 = utls.ConvolutionBlock(in_channels=36, out_channels=36)
         self.conv7 = utls.ConvolutionBlock(in_channels=36, out_channels=48)
         self.conv8 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
-        self.conv9 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+        # self.conv9 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
         # self.conv10 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
                 
         self.lin1 = nn.Sequential(      
-            nn.Dropout(p=0.5),
             # nn.Linear(1632, 128), # 7
             nn.Linear(864, 128), # 8
             # nn.Linear(480, 128), # 9
             # nn.Linear(288, 128), # 10
+            nn.Dropout(p=0.5),
             nn.ReLU(),
         )     
         self.out = nn.Linear(128, 2)
@@ -55,7 +55,7 @@ class CNN(nn.Module):
         x = self.conv6(x)
         x = self.conv7(x)
         x = self.conv8(x)
-        x = self.conv9(x)
+        # x = self.conv9(x)
         # x = self.conv10(x)
 
         # flatten the output of conv
@@ -140,7 +140,7 @@ def main():
         model = CNN()
 
         lr = 0.005
-        depth = 9
+        depth = 8.2
 
         optimizer = optim.Adam(params=model.parameters(),lr=lr)
         ce_loss = CrossEntropyLoss()
