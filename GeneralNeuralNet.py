@@ -31,14 +31,19 @@ class CNN(nn.Module):
         self.conv6 = utls.ConvolutionBlock(in_channels=36, out_channels=36)
         self.conv7 = utls.ConvolutionBlock(in_channels=36, out_channels=48)
         self.conv8 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
-        # self.conv9 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
-        # self.conv10 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+        self.conv9 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+        self.conv10 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+        # self.conv11 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
                 
         self.lin1 = nn.Sequential(      
             # nn.Linear(1632, 128), # 7
-            nn.Linear(864, 128), # 8
+            # nn.Linear(864, 128), # 8
+            # nn.Linear(672, 128), # 8 with maxpool
             # nn.Linear(480, 128), # 9
+            # nn.Linear(288, 128), # 9 with maxpool
             # nn.Linear(288, 128), # 10
+            nn.Linear(96, 128), # 10 with maxpool
+            # nn.Linear(48, 128), # 11 with maxpool
             nn.Dropout(p=0.5),
             nn.ReLU(),
         )     
@@ -55,8 +60,9 @@ class CNN(nn.Module):
         x = self.conv6(x)
         x = self.conv7(x)
         x = self.conv8(x)
-        # x = self.conv9(x)
-        # x = self.conv10(x)
+        x = self.conv9(x)
+        x = self.conv10(x)
+        # x = self.conv11(x)
 
         # flatten the output of conv
         x = x.view(x.size(0), -1)    
@@ -89,15 +95,8 @@ def train(model, train_loader, optimizer, loss_fun, device):
             
         # calc loss and gradients
 
-        # print(signal)
-        # print(out)
-        # print(targets)
-
         loss = loss_fun(out, targets).mean()
         loss.backward()
-
-        # print(loss)
-        #raise ValueError('A very specific bad thing happened.')
             
         # update
         optimizer.step()
@@ -129,8 +128,9 @@ def test(model, test_loader, device):
     return acc
 
 def main():
-    num_epochs = 100
+    num_epochs = 150
     num_folds = 10
+    depth = 10.2
     
     best_acc = 0
     best_state = []
@@ -140,7 +140,6 @@ def main():
         model = CNN()
 
         lr = 0.005
-        depth = 8.2
 
         optimizer = optim.Adam(params=model.parameters(),lr=lr)
         ce_loss = CrossEntropyLoss()
@@ -198,39 +197,39 @@ path = "G:\\Projects\\MA\\models\\"
 model_version = 1
 
 
-if os.path.exists(os.path.join(path, f'model{model_version}.chpt')) and 1 == 2:
+if os.path.exists(os.path.join(path, f'model{model_version}.chpt')):
     model = CNN()
     model.load_state_dict(torch.load(os.path.join(path, f'model{model_version}.chpt')))
 else:    
     model = main()
     torch.save(model.state_dict(), os.path.join(path, f'model{model_version}.chpt'))
 
-# model.eval()
-# model.to('cpu')
+model.eval()
+model.to('cpu')
 
-# def data_test(model, signal, ytrue):
-#     pred = model(signal.view(signal.shape[0], 12, 5000))
-#     pred = torch.argmax(pred)
-#     if pred != ytrue:
-#         print('Prediction: ', pred, 'Real: ', ytrue)
+def data_test(model, signal, ytrue):
+    pred = model(signal.view(signal.shape[0], 12, 4000))
+    pred = torch.argmax(pred)
+    if pred != ytrue:
+        print('Prediction: ', pred, 'Real: ', ytrue)
 
-# y_pred = []
-# y_true = []
+y_pred = []
+y_true = []
 
-# # iterate over test data
-# for inputs, _, _, labels in val_loader:
-#     output = model(inputs.view(inputs.shape[0], 12, 5000)) # Feed Network
+# iterate over test data
+for inputs, _, _, labels in val_loader:
+    output = model(inputs.view(inputs.shape[0], 12, 4000)) # Feed Network
 
-#     output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
-#     y_pred.extend(output) # Save Prediction
+    output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
+    y_pred.extend(output) # Save Prediction
     
-#     labels = labels.data.cpu().numpy()
-#     y_true.extend(labels) # Save Truth
+    labels = labels.data.cpu().numpy()
+    y_true.extend(labels) # Save Truth
 
-# classes = ('Normal', 'Abnormal')
-# cf_matrix = confusion_matrix(y_true, y_pred)
-# df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index = [i for i in classes],
-#                      columns = [i for i in classes])
-# plt.figure(figsize = (12,7))
-# sn.heatmap(df_cm, annot=True)
-# plt.show()
+classes = ('Normal', 'Abnormal')
+cf_matrix = confusion_matrix(y_true, y_pred)
+df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index = [i for i in classes],
+                     columns = [i for i in classes])
+plt.figure(figsize = (12,7))
+sn.heatmap(df_cm, annot=True)
+plt.show()

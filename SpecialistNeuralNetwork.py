@@ -9,12 +9,15 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 
-from torch.nn import CrossEntropyLoss
+from torch.nn import BCEWithLogitsLoss
+from tqdm import tqdm
+from copy import deepcopy
 
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, accuracy_score
 
 import torch.nn as nn
 import torch
+import pickle
 
 # create the new model
 class FinetunedCNN(nn.Module):
@@ -22,48 +25,32 @@ class FinetunedCNN(nn.Module):
         super(FinetunedCNN, self).__init__()
 
         # initialize the same architecture as the existing CNN model
-        self.conv1 = utls.ConvolutionBlock(in_channels=12, out_channels=32)
-        self.conv2 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv3 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv4 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv5 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv6 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv7 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv8 = utls.ConvolutionBlock(in_channels=32, out_channels=32) 
+        self.conv1 = utls.ConvolutionBlock(in_channels=12, out_channels=24)
+        self.conv2 = utls.ConvolutionBlock(in_channels=24, out_channels=24)
+        self.conv3 = utls.ConvolutionBlock(in_channels=24, out_channels=24)
+        self.conv4 = utls.ConvolutionBlock(in_channels=24, out_channels=36)
+        self.conv5 = utls.ConvolutionBlock(in_channels=36, out_channels=36)
+        self.conv6 = utls.ConvolutionBlock(in_channels=36, out_channels=36)
+        self.conv7 = utls.ConvolutionBlock(in_channels=36, out_channels=48)
+        self.conv8 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+        self.conv9 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+        self.conv10 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
 
-        self.lin1 = nn.Sequential(      
+        self.lin1 = nn.Sequential(
             nn.Dropout(p=0.2),
-            nn.Linear(192, 512),
-            nn.ReLU(),
-        )        
-        self.lin2 = nn.Sequential(      
-            nn.Dropout(p=0.2),
-            nn.Linear(512, 512),
-            nn.ReLU(),
-        )   
-        self.lin3 = nn.Sequential(      
-            nn.Dropout(p=0.2),
-            nn.Linear(512, 192),
+            nn.Linear(96, 64),
             nn.ReLU(),
         )
 
-        self.norm = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.imi = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.asmi = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.ilmi = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.ami = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.almi = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.injas = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.lmi = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.injal = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.iplmi = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.ipmi = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.injin = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.injla = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.pmi = utls.OutputBlock(in_channels=192, out_channels=2)
-        self.injil = utls.OutputBlock(in_channels=192, out_channels=2)
+        self.lin2 = nn.Sequential(
+            nn.Dropout(p=0.2),
+            nn.Linear(64, 64),
+            nn.ReLU(),
+        )
 
-        self.is_conv = True 
+        self.out = utls.OutputBlock(in_channels=64, out_channels=15)
+
+        self.is_conv = True
 
     def forward(self, x):
         x = self.conv1(x)
@@ -74,65 +61,117 @@ class FinetunedCNN(nn.Module):
         x = self.conv6(x)
         x = self.conv7(x)
         x = self.conv8(x)
+        x = self.conv9(x)
+        x = self.conv10(x)
 
         x = x.view(x.size(0), -1)
 
         x = self.lin1(x)
         x = self.lin2(x)
-        x = self.lin3(x)
-        
-        return {
-            'NORM': self.norm(x),
-            'IMI': self.imi(x),
-            'ASMI': self.asmi(x),
-            'ILMI': self.ilmi(x),
-            'AMI': self.ami(x),
-            'ALMI': self.almi(x),
-            'INJAS': self.injas(x),
-            'LMI': self.lmi(x),
-            'INJAL': self.injal(x),
-            'IPLMI': self.iplmi(x),
-            'IPMI': self.ipmi(x),
-            'INJIN': self.injin(x),
-            'INJLA': self.injla(x),
-            'PMI': self.pmi(x),
-            'INJIL': self.injil(x)
-        }
+        # x = self.lin3(x)
 
-def train(model, train_loader, optimizer, loss_fun, device, epoch):
+        return self.out(x)
+
+
+def train(model, train_loader, optimizer, loss_fun, device):
     model.train()
-    
-    for i, (signal, _, _, targets) in enumerate(train_loader):        
+
+    for i, (signal, _, _, targets) in enumerate(tqdm(train_loader, desc='Train')):
+        signal = signal.to(device)
+        #targets = targets.values().to(device)
+        labels = []
+        for item in range(targets['NORM'].shape[0]):
+            labels.append([
+                targets['NORM'][item],
+                targets['IMI'][item],
+                targets['ASMI'][item],
+                targets['ILMI'][item],
+                targets['AMI'][item],
+                targets['ALMI'][item],
+                targets['INJAS'][item],
+                targets['LMI'][item],
+                targets['INJAL'][item],
+                targets['IPLMI'][item],
+                targets['IPMI'][item],
+                targets['INJIN'][item],
+                targets['INJLA'][item],
+                targets['PMI'][item],
+                targets['INJIL'][item],
+            ])
+
+        labels = torch.tensor(labels, dtype=torch.float32)
+        labels = labels.to(device)
+
+        # get batch size
         bs = signal.shape[0]
-            
-        x = signal.view(bs, 12, 5000)
+
+        # fully connected model: we need to flatten the signals
+        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 4000)
+
+        # signal to device
         x = x.to(device)
-            
+
+        # zero grads
         optimizer.zero_grad()
+
+        # forward pass
         out = model(x)
-        loss = criterion(loss_fun, out, targets, device).mean()
+
+        # calc loss and gradients
+
+        loss = loss_fun(out, labels).mean()
         loss.backward()
-            
+
+        # update
         optimizer.step()
 
-    model.train(mode=False)
-
+    #print(loss)
     return loss.item()
 
-def test(model, train_loader, optimizer, loss_fun, device, epoch):
+def test(model, test_loader, device):
     model.eval()
 
-    for i, (signal, _, _, target) in enumerate(train_loader):
+    accs = []
+    for i, (signal, _, _, targets) in enumerate(tqdm(test_loader, desc='Test')):
+        signal = signal.to(device)
+        labels = []
+        for item in range(targets['NORM'].shape[0]):
+            labels.append([
+                targets['NORM'][item],
+                targets['IMI'][item],
+                targets['ASMI'][item],
+                targets['ILMI'][item],
+                targets['AMI'][item],
+                targets['ALMI'][item],
+                targets['INJAS'][item],
+                targets['LMI'][item],
+                targets['INJAL'][item],
+                targets['IPLMI'][item],
+                targets['IPMI'][item],
+                targets['INJIN'][item],
+                targets['INJLA'][item],
+                targets['PMI'][item],
+                targets['INJIL'][item],
+            ])
+
+        labels = torch.tensor(labels, dtype=torch.float32)
+
         bs = signal.shape[0]
-            
-        x = signal.view(bs, 12, 5000)
+
+        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 4000)
         x = x.to(device)
-        
-        # TODO
 
-    model.eval(mode=False)
+        out = model(x)
+        out = torch.sigmoid(out)
+        out = torch.round(out)
+        out = out.cpu().detach().numpy()
 
-    return loss.item()
+        acc_ = accuracy_score(labels, out)
+        accs.append(acc_)
+
+    acc = sum(accs)/len(accs)
+
+    return acc
 
 def criterion(loss_func, outputs, labels, device):
   losses = 0
@@ -141,72 +180,90 @@ def criterion(loss_func, outputs, labels, device):
   return losses
 
 
-def main():
-    num_epochs = 100
-
+def loadModel():
     model = FinetunedCNN()
 
     # load the weights from the file
-    state_dict = torch.load("G:\\Projects\\MA\\" + 'model4.chpt')
+    state_dict = torch.load("G:\\Projects\\MA\\models\\" + 'model10layers.chpt')
 
-    loadLayer(state_dict, 'conv1.0.', model.conv1)
-    loadLayer(state_dict, 'conv2.0.', model.conv2)
-    loadLayer(state_dict, 'conv3.0.', model.conv3)
-    loadLayer(state_dict, 'conv4.0.', model.conv4)
-    loadLayer(state_dict, 'conv5.0.', model.conv5)
-    loadLayer(state_dict, 'conv6.0.', model.conv6)
-    loadLayer(state_dict, 'conv7.0.', model.conv7)
-    loadLayer(state_dict, 'conv8.0.', model.conv8)
+    utls.loadConvolutionBlockLayer(state_dict, 'conv1', model.conv1)
+    utls.loadConvolutionBlockLayer(state_dict, 'conv2', model.conv2)
+    utls.loadConvolutionBlockLayer(state_dict, 'conv3', model.conv3)
+    utls.loadConvolutionBlockLayer(state_dict, 'conv4', model.conv4)
+    utls.loadConvolutionBlockLayer(state_dict, 'conv5', model.conv5)
+    utls.loadConvolutionBlockLayer(state_dict, 'conv6', model.conv6)
+    utls.loadConvolutionBlockLayer(state_dict, 'conv7', model.conv7)
+    utls.loadConvolutionBlockLayer(state_dict, 'conv8', model.conv8)
+    utls.loadConvolutionBlockLayer(state_dict, 'conv9', model.conv8)
+    utls.loadConvolutionBlockLayer(state_dict, 'conv10', model.conv8)
 
     # freeze layers
-    for name, param in model.named_parameters():
-        if 'conv1' in name or 'conv2' in name or 'conv3' in name or 'conv4' in name or 'conv5' in name:
-            param.requiresGrad = False
+    # for name, param in model.named_parameters():
+    #     if 'conv1' in name or 'conv2' in name or 'conv3' in name or 'conv4' in name or 'conv5' in name:
+    #         param.requiresGrad = False
 
-    #print(model)
+    return model
 
-    optimizer = optim.Adam(params=model.parameters(), lr=0.000005)
-    loss_fun = nn.CrossEntropyLoss()
-    
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = model.to(device)
-    
-    tr_loss = []
-    tr_acc = []
-    ev_loss = [0]
-    ev_acc = [0]
-    for epoch in range(num_epochs):
-        loss = train(model, train_loader, optimizer, loss_fun, device, epoch)
-        tr_loss.append(loss)
-                
-        # calculate accuracy
-        model.eval()
-        N = 200
-        x, _, _, label = dataset[:N] 
-        x = x.view(N, 12, 5000) if model.is_conv else  x.view(N,-1) 
+def main():
+    num_epochs = 75
+    num_folds = 10
+    depth = 10.1
+    lr = 0.005
 
-        x = x.to(device)
-        out = model(x)
-        #out = torch.where(out < 0.5, torch.tensor(0).to(device), torch.tensor(1).to(device))
+    best_acc = 0
+    best_state = []
 
-        #acc_ = utls.hamming_score(label, out)
-        #acc_ = ((label & out).sum(axis=1) / (label | out).sum(axis=1)).mean()
-        #acc_ = (out.argmax(-1) == label).float().sum()/len(label)
-        #acc_ = acc_.to('cpu')
-        acc_ = 0
-        tr_acc.append(acc_)        
-        
-        print(f'epoch [{epoch+1}/{num_epochs}]: train loss = {loss:.8f}, train acc = {tr_acc[-1]:.5f}, val acc = {ev_acc[-1]:.5f}')    
+    for fold in range(num_folds):
+        print(f'Fold [{fold + 1}/{num_folds}]:')
+        model = loadModel()
 
-    plt.plot(tr_loss, label='train loss')
-    plt.legend()
-    plt.show()
-    
-    plt.plot(tr_acc, label='train accuracy')
-    plt.plot(ev_acc, label='eval accuracy')
-    plt.title('acc')
-    plt.legend()
-    plt.show()
+        optimizer = optim.Adam(params=model.parameters(), lr=lr)
+        loss_fun = nn.BCEWithLogitsLoss()
+
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        model = model.to(device)
+
+        tr_loss = []
+        tr_acc = []
+        te_acc = []
+        best_run_acc = 0
+        for epoch in range(num_epochs):
+            loss = train(model, train_loader, optimizer, loss_fun, device)
+            tr_loss.append(loss)
+            tr_acc.append(test(model, train_loader, device))
+            te_acc.append(test(model, test_loader, device))
+
+            if te_acc[-1] > best_run_acc:
+                best_run_acc = te_acc[-1]
+
+            if te_acc[-1] > best_acc:
+                best_acc = te_acc[-1]
+                best_state = deepcopy(model.state_dict())
+
+            print(f'epoch [{epoch+1}/{num_epochs}]: train loss = {loss:.8f}, train acc = {tr_acc[-1]:.5f}, test acc = {te_acc[-1]:.5f}, best run acc = {best_run_acc:.5f}, best acc = {best_acc:.5f}')
+
+        plt.plot(tr_loss, label='train loss')
+        plt.legend()
+        plt.savefig(f'G:\Projects\MA\images\SNN\{depth}_Layers_{fold + 1}_Loss_lr{lr}.png')
+        plt.clf()
+
+        plt.plot(tr_acc, label='train accuracy')
+        plt.plot(te_acc, label='test accuracy')
+        plt.legend()
+        plt.savefig(f'G:\Projects\MA\images\SNN\{depth}_Layers_{fold + 1}_Acc_lr{lr}.png')
+        plt.clf()
+
+        with open(f'G:\Projects\MA\\variables\SNN\{depth}_Layers_{fold + 1}_train_loss.pkl', 'wb') as f:
+            pickle.dump(tr_loss, f)
+
+        with open(f'G:\Projects\MA\\variables\SNN\{depth}_Layers_{fold + 1}_train_acc.pkl', 'wb') as f:
+            pickle.dump(tr_acc, f)
+
+        with open(f'G:\Projects\MA\\variables\SNN\{depth}_Layers_{fold + 1}_test_acc.pkl', 'wb') as f:
+            pickle.dump(te_acc, f)
+
+    print(f'Best test acc = {best_acc:.5f}')
+    model.load_state_dict(best_state)
 
     return model
 
@@ -214,10 +271,15 @@ def loadLayer(state_dict, layerName, layer):
     layer.weight = state_dict[layerName + 'weight']
     layer.bias = state_dict[layerName + 'bias']
 
-
 if __name__=="__main__":
-    dataset = PTBXLDataset()
-    train_loader, test_loader, val_loader = dataset.get_Loaders()
+    train_dataset = PTBXLDataset(folds=range(1,5))
+    test_dataset = PTBXLDataset(folds=[9])
+    val_dataset = PTBXLDataset(folds=[10])
+
+    train_loader = train_dataset.get_full_loader()
+    test_loader = test_dataset.get_full_loader()
+    val_loader = val_dataset.get_full_loader()
+
     path = "G:\\Projects\\MA"
     model_version = 1
 
@@ -229,24 +291,103 @@ if __name__=="__main__":
     else:
         model = main()
         torch.save(model.state_dict(), os.path.join(path, f'spec_model{model_version}.chpt'))
-        
+
         model = FinetunedCNN()
         model.load_state_dict(torch.load(os.path.join(path, f'spec_model{model_version}.chpt')))
 
     model.eval()
 
-
     def data_test(model, signal, ytrue):
-        pred = model(signal.view(signal.shape[0], 12, 5000))
+        pred = model(signal.view(signal.shape[0], 12, 4000))
+        pred = torch.sigmoid(pred)
+        pred = torch.round(pred)
+        pred = pred.cpu().detach().numpy()
 
-        for i, key in enumerate(pred):
-            accs[key].append(
-                pred[key].argmax(-1) == ytrue[key]
-            )
-        
+        for i in range(len(pred)):
+            accs['NORM'].append(pred[i][0] == ytrue['NORM'][i])
+            accs['IMI'].append(pred[i][1] == ytrue['IMI'][i])
+            accs['ASMI'].append(pred[i][2] == ytrue['ASMI'][i])
+            accs['ILMI'].append(pred[i][3] == ytrue['ILMI'][i])
+            accs['AMI'].append(pred[i][4] == ytrue['AMI'][i])
+            accs['ALMI'].append(pred[i][5] == ytrue['ALMI'][i])
+            accs['INJAS'].append(pred[i][6] == ytrue['INJAS'][i])
+            accs['LMI'].append(pred[i][7] == ytrue['LMI'][i])
+            accs['INJAL'].append(pred[i][8] == ytrue['INJAL'][i])
+            accs['IPLMI'].append(pred[i][9] == ytrue['IPLMI'][i])
+            accs['IPMI'].append(pred[i][10] == ytrue['IPMI'][i])
+            accs['INJIN'].append(pred[i][11] == ytrue['INJIN'][i])
+            accs['INJLA'].append(pred[i][12] == ytrue['INJLA'][i])
+            accs['PMI'].append(pred[i][13] == ytrue['PMI'][i])
+            accs['INJIL'].append(pred[i][14] == ytrue['INJIL'][i])
 
-    y_pred = []
-    y_true = []
+            count_pred['NORM'] += pred[i][0]
+            count_pred['IMI']+= pred[i][1]
+            count_pred['ASMI']+= pred[i][2]
+            count_pred['ILMI']+= pred[i][3]
+            count_pred['AMI']+= pred[i][4]
+            count_pred['ALMI']+= pred[i][5]
+            count_pred['INJAS']+= pred[i][6]
+            count_pred['LMI']+= pred[i][7]
+            count_pred['INJAL']+= pred[i][8]
+            count_pred['IPLMI']+= pred[i][9]
+            count_pred['IPMI']+= pred[i][10]
+            count_pred['INJIN']+= pred[i][11]
+            count_pred['INJLA']+= pred[i][12]
+            count_pred['PMI']+= pred[i][13]
+            count_pred['INJIL']+= pred[i][14]            
+
+            count_true['NORM'] += ytrue['NORM'][i]
+            count_true['IMI']+= ytrue['IMI'][i]
+            count_true['ASMI']+= ytrue['ASMI'][i]
+            count_true['ILMI']+= ytrue['ILMI'][i]
+            count_true['AMI']+= ytrue['AMI'][i]
+            count_true['ALMI']+= ytrue['ALMI'][i]
+            count_true['INJAS']+= ytrue['INJAS'][i]
+            count_true['LMI']+= ytrue['LMI'][i]
+            count_true['INJAL']+= ytrue['INJAL'][i]
+            count_true['IPLMI']+= ytrue['IPLMI'][i]
+            count_true['IPMI']+= ytrue['IPMI'][i]
+            count_true['INJIN']+= ytrue['INJIN'][i]
+            count_true['INJLA']+= ytrue['INJLA'][i]
+            count_true['PMI']+= ytrue['PMI'][i]
+            count_true['INJIL']+= ytrue['INJIL'][i]
+
+
+    count_pred = {
+        'NORM': 0,
+        'IMI': 0,
+        'ASMI': 0,
+        'ILMI': 0,
+        'AMI': 0,
+        'ALMI': 0,
+        'INJAS': 0,
+        'LMI': 0,
+        'INJAL': 0,
+        'IPLMI': 0,
+        'IPMI': 0,
+        'INJIN': 0,
+        'INJLA': 0,
+        'PMI': 0,
+        'INJIL': 0,
+    }
+
+    count_true = {
+        'NORM': 0,
+        'IMI': 0,
+        'ASMI': 0,
+        'ILMI': 0,
+        'AMI': 0,
+        'ALMI': 0,
+        'INJAS': 0,
+        'LMI': 0,
+        'INJAL': 0,
+        'IPLMI': 0,
+        'IPMI': 0,
+        'INJIN': 0,
+        'INJLA': 0,
+        'PMI': 0,
+        'INJIL': 0,
+    }
 
     accs = {
         'NORM': [],
@@ -269,54 +410,7 @@ if __name__=="__main__":
     for inputs, _, _, labels in val_loader:
         data_test(model, inputs, labels)
 
-
     for i, key in enumerate(accs):
         #print(accs[key])
         accs[key] = torch.stack(accs[key]).float().sum()/len(accs[key])
-
-    print(accs)
-
-    # def multilabel_confusion_matrix(y_true, y_pred):
-    #     y_true = np.array(y_true)
-    #     y_pred = np.array(y_pred)
-    #     assert y_true.shape == y_pred.shape, "Input shapes do not match"
-    #     assert len(y_true.shape) == 2, "Input should be 2D arrays"
-
-    #     n_classes = y_true.shape[1]
-    #     conf_mat = np.zeros((n_classes, n_classes))
-
-    #     for i in range(n_classes):
-    #         for j in range(n_classes):
-    #             true_positives = np.sum((y_true[:, i] == 1) & (y_pred[:, j] == 1))
-    #             false_positives = np.sum((y_true[:, i] == 0) & (y_pred[:, j] == 1))
-    #             false_negatives = np.sum((y_true[:, i] == 1) & (y_pred[:, j] == 0))
-    #             conf_mat[i, j] = true_positives, false_positives, false_negatives
-    #     return conf_mat
-
-    # # iterate over test data
-    # for inputs, _, _, labels in val_loader:
-    #     output = model(inputs.view(inputs.shape[0], 12, 5000)) # Feed Network
-
-    #     output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
-    #     y_pred.extend(output) # Save Prediction
-        
-    #     labels = labels.data.cpu().numpy()
-    #     y_true.extend(labels) # Save Truth
-
-
-    # conf_mat = multilabel_confusion_matrix(y_true, y_pred)
-
-    # df_cm = pd.DataFrame(conf_mat, range(23), range(23))
-    # sn.set(font_scale=1.4)
-    # sn.heatmap(df_cm, annot=True, annot_kws={"size": 16})
-    # plt.show()
-
-    # classes = (
-    #     'NORM','STTC','NST_','IMI','AMI','LVH','LAFB/LPFB','ISC_','IRBBB','_AVB','IVCD','ISCA','CRBBB','CLBBB',
-    #     'LAO/LAE','ISCI','LMI','RVH','RAO/RAE','WPW','ILBBB','SEHYP','PMI')
-    # cf_matrix = confusion_matrix(y_true, y_pred)
-    # df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index = [i for i in classes],
-    #                      columns = [i for i in classes])
-    # plt.figure(figsize = (12,7))
-    # sn.heatmap(df_cm, annot=True)
-    # plt.show()
+        print(f'{key}: {accs[key]:.3f}% ({count_pred[key]}/{count_true[key]})')

@@ -383,15 +383,17 @@ class ConvolutionBlock(torch.nn.Module):
         super(ConvolutionBlock, self).__init__()
         self.conv = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, stride=2, padding=3)
         self.relu = nn.ReLU()
-        self.drop_layer = nn.Dropout(p=0.1)
+        self.drop_layer = nn.Dropout1d(p=0.1)
         self.batchNorm = nn.BatchNorm1d(out_channels)
+        self.pool = nn.MaxPool1d(3, stride=1)
 
 
     def forward(self, x):
         x = self.conv(x)
         x = self.relu(x)
-        x = self.drop_layer(x)
         x = self.batchNorm(x)
+        x = self.drop_layer(x)
+        x = self.pool(x)
 
         return x
 
@@ -401,7 +403,6 @@ class OutputBlock(torch.nn.Module):
         self.out = nn.Sequential(         
             nn.Dropout(p=0.2),
             nn.Linear(in_channels, out_channels),
-            nn.Sigmoid()
         )
     
     #TODO init weights
@@ -435,41 +436,4 @@ def getTracingFromH5(exam_id, file_path):
 if __name__=="__main__":
     print('Main Utils')
 
-    mat_contents = sio.loadmat(f'G:\Projects\MA\data\cpsc2018-extra\data\WFDB_CPSC2018_2\Q1479.mat')
-    print(mat_contents)
-    # print(getCPSC2018SexDataFromMatlab(pd.Series(data={'Recording':'A0001'})))
-    # print(getCPSC2018SexDataFromMatlab(pd.Series(data={'Recording':'A0002'})))
-
-
-    # filename = f"G:\Projects\MA\Code-15\exams\exams_part15.hdf5"
-    # with h5py.File(filename, "r") as f:
-    #     # Print all root level object names (aka keys) 
-    #     # these can be group or dataset names 
-    #     print("Keys: %s" % f.keys())
-    #     exam_ids = f['exam_id'][:]
-    #     idx = np.where(exam_ids == 1368336)[0][0]
-
-    #     tracing = f['tracings'][idx]
-    #     print(idx, tracing)
-    #     #print(f['exam_id'][:5])
-
-
-    #     # get first object name/key; may or may NOT be a group
-    #     # a_group_key = list(f.keys())[0]
-
-    #     # # get the object type for a_group_key: usually group or dataset
-    #     # print(type(f[a_group_key])) 
-
-    #     # # If a_group_key is a group name, 
-    #     # # this gets the object names in the group and returns as a list
-    #     # data = list(f[a_group_key])
-
-    #     # # If a_group_key is a dataset name, 
-    #     # # this gets the dataset values and returns as a list
-    #     # data = list(f[a_group_key])
-    #     # # preferred methods to get dataset values:
-    #     # ds_obj = f[a_group_key]      # returns as a h5py dataset object
-    #     # ds_arr = f[a_group_key][()]  # returns as a numpy array
-    
-
-
+   

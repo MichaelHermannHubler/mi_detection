@@ -11,11 +11,14 @@ import numpy as np
 class PTBXLDataset(Dataset):
     def __init__(self, folds = [], labels = [], leads = []):
         super().__init__()
-        self.path = "G:\\Projects\\MA\\PTB-XL\\data"
-        self.data = loadPTBXL()
+        self.path = "G:\\Projects\\MA\\data\\PTB-XL\\data"
         self.folds = folds if len(folds) > 0 else range(1,10)
         self.labels = labels if len(labels) > 0 else ['NORM', 'IMI', 'ASMI', 'ILMI', 'AMI', 'ALMI', 'INJAS', 'LMI', 'INJAL', 'IPLMI', 'IPMI', 'INJIN', 'INJLA', 'PMI', 'INJIL']
         self.leads = leads if len(leads) > 0 else range(12)
+        
+        self.data = loadPTBXL()
+        self.data = self.data[self.data['strat_fold'].isin(self.folds)]
+        self.data.reset_index(inplace=True)
 
     def __len__(self):
         return len(self.data)
@@ -24,7 +27,7 @@ class PTBXLDataset(Dataset):
         if isinstance(idx, int):
             signals = wfdb.rdsamp(os.path.join(self.path, self.data['filename_hr'][idx]))
 
-            signals = signals[0][:5000,self.leads]
+            signals = signals[0][500:4500,self.leads]
             # extract the signals and labels from the mat file
             sex = self.data['sex'][idx]
             age = self.data['age'][idx]
@@ -88,7 +91,7 @@ class PTBXLDataset(Dataset):
             return return_signals, return_sex, return_age, return_label
         else:
             signals = wfdb.rdsamp(os.path.join(self.path, self.data['filename_hr'][idx]))
-            signals = signals[0][:5000,self.leads]
+            signals = signals[0][500:4500,self.leads]
             # extract the signals and labels from the mat file
             sex = self.data['sex'][idx]
             age = self.data['age'][idx]
@@ -126,14 +129,16 @@ class PTBXLDataset(Dataset):
             # return the signals and labels
             return signals, sex, age, label
 
-    def get_Loaders(self):
+    def get_loaders(self):
         train_data, test_data = train_test_split(self, test_size=0.30, random_state=42)
         test_data, val_data = train_test_split(test_data, test_size=0.50, random_state=42)
 
         return DataLoader(dataset=train_data, batch_size=32, shuffle=True), \
             DataLoader(dataset=test_data, batch_size=32, shuffle=True), \
             DataLoader(dataset=val_data, batch_size=1, shuffle=True)
-
+    
+    def get_full_loader(self, batch_size=32):
+        return DataLoader(dataset=self, batch_size=batch_size, shuffle=True)
 
 def display_first_10(dataset):
     for i in range(10):
@@ -143,10 +148,10 @@ def display_first_10(dataset):
         print("Age: ", age)
         print("Labels: ", label)
 
-
 if __name__=="__main__":
     print('Main')
     
-    dataset = PTBXLDataset(labels = ['NORM'], leads=range(6))
-    signal, _, _, label = dataset[1]
-    print(signal.shape)
+    dataset = PTBXLDataset()
+    
+    for row in dataset:
+        print(row[3])

@@ -10,11 +10,14 @@ import os
 import numpy as np
 
 from torch.nn import CrossEntropyLoss
+from tqdm import tqdm
+from copy import deepcopy
 
 from sklearn.metrics import confusion_matrix
 
 import torch.nn as nn
 import torch
+import pickle
 
 # create the new model
 class FinetunedCNN(nn.Module):
@@ -22,32 +25,34 @@ class FinetunedCNN(nn.Module):
         super(FinetunedCNN, self).__init__()
 
         # initialize the same architecture as the existing CNN model
-        self.conv1 = utls.ConvolutionBlock(in_channels=12, out_channels=32)
-        self.conv2 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv3 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv4 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv5 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv6 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv7 = utls.ConvolutionBlock(in_channels=32, out_channels=32)
-        self.conv8 = utls.ConvolutionBlock(in_channels=32, out_channels=32) 
+        self.conv1 = utls.ConvolutionBlock(in_channels=12, out_channels=24)
+        self.conv2 = utls.ConvolutionBlock(in_channels=24, out_channels=24)
+        self.conv3 = utls.ConvolutionBlock(in_channels=24, out_channels=24)
+        self.conv4 = utls.ConvolutionBlock(in_channels=24, out_channels=36)
+        self.conv5 = utls.ConvolutionBlock(in_channels=36, out_channels=36)
+        self.conv6 = utls.ConvolutionBlock(in_channels=36, out_channels=36)
+        self.conv7 = utls.ConvolutionBlock(in_channels=36, out_channels=48)
+        self.conv8 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+        self.conv9 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+        self.conv10 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
 
         self.lin1 = nn.Sequential(      
             nn.Dropout(p=0.2),
-            nn.Linear(288, 512),
+            nn.Linear(96, 32),
             nn.ReLU(),
         )        
         self.lin2 = nn.Sequential(      
             nn.Dropout(p=0.2),
-            nn.Linear(512, 512),
+            nn.Linear(32, 32),
             nn.ReLU(),
         )   
-        self.lin3 = nn.Sequential(      
-            nn.Dropout(p=0.2),
-            nn.Linear(512, 192),
-            nn.ReLU(),
-        )
+        # self.lin3 = nn.Sequential(      
+        #     nn.Dropout(p=0.2),
+        #     nn.Linear(512, 128),
+        #     nn.ReLU(),
+        # )
 
-        self.norm = utls.OutputBlock(in_channels=192, out_channels=2)
+        self.norm = utls.OutputBlock(in_channels=32, out_channels=2)
 
         self.is_conv = True 
 
@@ -60,51 +65,72 @@ class FinetunedCNN(nn.Module):
         x = self.conv6(x)
         x = self.conv7(x)
         x = self.conv8(x)
+        x = self.conv9(x)
+        x = self.conv10(x)
 
         x = x.view(x.size(0), -1)
 
         x = self.lin1(x)
         x = self.lin2(x)
-        x = self.lin3(x)
+        # x = self.lin3(x)
         
-        return {
-            'NORM': self.norm(x)
-        }
+        return self.norm(x)
 
-def train(model, train_loader, optimizer, loss_fun, device, epoch):
+def train(model, train_loader, optimizer, loss_fun, device):
     model.train()
     
-    for i, (signal, _, _, targets) in enumerate(train_loader):        
+    for i, (signal, _, _, targets) in enumerate(tqdm(train_loader, desc='Train')):
+        signal = signal.to(device)
+        targets = targets['NORM'].to(device)
+
+        # get batch size
         bs = signal.shape[0]
             
-        x = signal.view(bs, 12, 5000)
+        # fully connected model: we need to flatten the signals
+        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 4000)
+            
+        # signal to device
         x = x.to(device)
             
+        # zero grads
         optimizer.zero_grad()
+            
+        # forward pass
         out = model(x)
-        loss = criterion(loss_fun, out, targets, device).mean()
+            
+        # calc loss and gradients
+
+        loss = loss_fun(out, targets).mean()
         loss.backward()
             
+        # update
         optimizer.step()
 
-    model.train(mode=False)
-
+    #print(loss)
     return loss.item()
 
-def test(model, train_loader, optimizer, loss_fun, device, epoch):
-    model.eval()
+def test(model, test_loader, device):
+    model.eval()    
 
-    for i, (signal, _, _, target) in enumerate(train_loader):
-        bs = signal.shape[0]
-            
-        x = signal.view(bs, 12, 5000)
-        x = x.to(device)
+    accs = []
+    for i, (signal, _, _, targets) in enumerate(tqdm(test_loader, desc='Test')):
+        signal = signal.to(device)
+        targets = targets['NORM'].to(device)
         
-        # TODO
+        bs = signal.shape[0]
 
-    model.eval(mode=False)
+        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 4000)
+        x = x.to(device)
 
-    return loss.item()
+        out = model(x)
+        acc_ = (out.argmax(-1) == targets).float().sum()/len(targets)
+        acc_ = acc_.to('cpu')
+
+        accs.append(acc_)
+
+    acc = sum(accs)/len(accs)
+
+    return acc
 
 def criterion(loss_func, outputs, labels, device):
   losses = 0
@@ -112,14 +138,11 @@ def criterion(loss_func, outputs, labels, device):
     losses += loss_func(outputs[key], labels[key].to(device))
   return losses
 
-
-def main():
-    num_epochs = 100
-
+def loadModel():
     model = FinetunedCNN()
 
     # load the weights from the file
-    state_dict = torch.load("G:\\Projects\\MA\\" + 'model1.chpt')
+    state_dict = torch.load("G:\\Projects\\MA\\models\\" + 'model10layers.chpt')
 
     utls.loadConvolutionBlockLayer(state_dict, 'conv1', model.conv1)
     utls.loadConvolutionBlockLayer(state_dict, 'conv2', model.conv2)
@@ -129,57 +152,76 @@ def main():
     utls.loadConvolutionBlockLayer(state_dict, 'conv6', model.conv6)
     utls.loadConvolutionBlockLayer(state_dict, 'conv7', model.conv7)
     utls.loadConvolutionBlockLayer(state_dict, 'conv8', model.conv8)
+    utls.loadConvolutionBlockLayer(state_dict, 'conv9', model.conv8)
+    utls.loadConvolutionBlockLayer(state_dict, 'conv10', model.conv8)
 
     # freeze layers
-    for name, param in model.named_parameters():
-        if 'conv1' in name or 'conv2' in name or 'conv3' in name or 'conv4' in name or 'conv5' in name:
-            param.requiresGrad = False
+    # for name, param in model.named_parameters():
+    #     if 'conv1' in name or 'conv2' in name or 'conv3' in name or 'conv4' in name or 'conv5' in name:
+    #         param.requiresGrad = False
 
-    #print(model)
+    return model
 
-    optimizer = optim.Adam(params=model.parameters(), lr=0.000005)
-    loss_fun = nn.CrossEntropyLoss()
+def main():
+    num_epochs = 150
+    num_folds = 10
+    depth = 10.6
+    lr = 0.005
     
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = model.to(device)
-    
-    tr_loss = []
-    tr_acc = []
-    ev_loss = [0]
-    ev_acc = [0]
-    for epoch in range(num_epochs):
-        loss = train(model, train_loader, optimizer, loss_fun, device, epoch)
-        tr_loss.append(loss)
-                
-        # calculate accuracy
-        model.eval()
-        N = 200
-        x, _, _, label = dataset[:N] 
-        x = x.view(N, 12, 5000) if model.is_conv else  x.view(N,-1) 
+    best_acc = 0
+    best_state = []
 
-        x = x.to(device)
-        out = model(x)
-        #out = torch.where(out < 0.5, torch.tensor(0).to(device), torch.tensor(1).to(device))
+    for fold in range(num_folds):
+        print(f'Fold [{fold + 1}/{num_folds}]:')
+        model = loadModel()
 
-        dict_of_arrays = {}
-        for key in label[0]:
-            dict_of_arrays[key] = torch.tensor([d[key] for d in label], dtype=torch.float32).to(device)
-
-        acc_ = (out['NORM'].argmax(-1) == dict_of_arrays['NORM']).float().sum()/len(label)
-        acc_ = acc_.to('cpu')
-        tr_acc.append(acc_)        
+        optimizer = optim.Adam(params=model.parameters(), lr=lr)
+        loss_fun = nn.CrossEntropyLoss()
         
-        print(f'epoch [{epoch+1}/{num_epochs}]: train loss = {loss:.8f}, train acc = {tr_acc[-1]:.5f}, val acc = {ev_acc[-1]:.5f}')    
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        model = model.to(device)
+        
+        tr_loss = []
+        tr_acc = []
+        te_acc = []
+        best_run_acc = 0
+        for epoch in range(num_epochs):
+            loss = train(model, train_loader, optimizer, loss_fun, device)
+            tr_loss.append(loss)
+            tr_acc.append(test(model, train_loader, device))
+            te_acc.append(test(model, test_loader, device))
 
-    plt.plot(tr_loss, label='train loss')
-    plt.legend()
-    plt.show()
-    
-    plt.plot(tr_acc, label='train accuracy')
-    plt.plot(ev_acc, label='eval accuracy')
-    plt.title('acc')
-    plt.legend()
-    plt.show()
+            if te_acc[-1] > best_run_acc:
+                best_run_acc = te_acc[-1]
+            
+            if te_acc[-1] > best_acc:
+                best_acc = te_acc[-1]
+                best_state = deepcopy(model.state_dict())
+            
+            print(f'epoch [{epoch+1}/{num_epochs}]: train loss = {loss:.8f}, train acc = {tr_acc[-1]:.5f}, test acc = {te_acc[-1]:.5f}, best run acc = {best_run_acc:.5f}, best acc = {best_acc:.5f}')
+        
+        plt.plot(tr_loss, label='train loss')
+        plt.legend()
+        plt.savefig(f'G:\Projects\MA\images\SNN\{depth}_Layers_{fold + 1}_Loss_lr{lr}.png')
+        plt.clf()
+        
+        plt.plot(tr_acc, label='train accuracy')
+        plt.plot(te_acc, label='test accuracy')
+        plt.legend()
+        plt.savefig(f'G:\Projects\MA\images\SNN\{depth}_Layers_{fold + 1}_Acc_lr{lr}.png')
+        plt.clf()
+
+        with open(f'G:\Projects\MA\\variables\SNN\{depth}_Layers_{fold + 1}_train_loss.pkl', 'wb') as f:
+            pickle.dump(tr_loss, f)
+            
+        with open(f'G:\Projects\MA\\variables\SNN\{depth}_Layers_{fold + 1}_train_acc.pkl', 'wb') as f:
+            pickle.dump(tr_acc, f)
+            
+        with open(f'G:\Projects\MA\\variables\SNN\{depth}_Layers_{fold + 1}_test_acc.pkl', 'wb') as f:
+            pickle.dump(te_acc, f)
+
+    print(f'Best test acc = {best_acc:.5f}')
+    model.load_state_dict(best_state)
 
     return model
 
@@ -190,7 +232,7 @@ def loadLayer(state_dict, layerName, layer):
 
 if __name__=="__main__":
     dataset = PTBXLDataset(labels = ['NORM'])
-    train_loader, test_loader, val_loader = dataset.get_Loaders()
+    train_loader, test_loader, val_loader = dataset.get_loaders()
     path = "G:\\Projects\\MA"
     model_version = 1
 
@@ -207,69 +249,29 @@ if __name__=="__main__":
         model.load_state_dict(torch.load(os.path.join(path, f'specbase_model{model_version}.chpt')))
 
     model.eval()
-
-    def data_test(model, signal, ytrue):
-        pred = model(signal.view(signal.shape[0], 12, 5000))
-
-        for i, key in enumerate(pred):
-            accs.append(
-                pred[key].argmax(-1) == ytrue[key]
-            )
-        
+    model.to('cpu')
 
     y_pred = []
     y_true = []
 
-    accs = []
-    i = 0
+    # iterate over test data
     for inputs, _, _, labels in val_loader:
-        data_test(model, inputs, labels)
+        output = model(inputs.view(inputs.shape[0], 12, 4000)) # Feed Network
 
-
-
-    print(torch.tensor(accs, dtype=torch.float32).sum()/len(val_loader))
-
-    # def multilabel_confusion_matrix(y_true, y_pred):
-    #     y_true = np.array(y_true)
-    #     y_pred = np.array(y_pred)
-    #     assert y_true.shape == y_pred.shape, "Input shapes do not match"
-    #     assert len(y_true.shape) == 2, "Input should be 2D arrays"
-
-    #     n_classes = y_true.shape[1]
-    #     conf_mat = np.zeros((n_classes, n_classes))
-
-    #     for i in range(n_classes):
-    #         for j in range(n_classes):
-    #             true_positives = np.sum((y_true[:, i] == 1) & (y_pred[:, j] == 1))
-    #             false_positives = np.sum((y_true[:, i] == 0) & (y_pred[:, j] == 1))
-    #             false_negatives = np.sum((y_true[:, i] == 1) & (y_pred[:, j] == 0))
-    #             conf_mat[i, j] = true_positives, false_positives, false_negatives
-    #     return conf_mat
-
-    # # iterate over test data
-    # for inputs, _, _, labels in val_loader:
-    #     output = model(inputs.view(inputs.shape[0], 12, 5000)) # Feed Network
-
-    #     output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
-    #     y_pred.extend(output) # Save Prediction
+        output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
+        y_pred.extend(output) # Save Prediction
         
-    #     labels = labels.data.cpu().numpy()
-    #     y_true.extend(labels) # Save Truth
+        labels = labels['NORM'].cpu().numpy()
+        y_true.extend(labels) # Save Truth
 
+    for inputs, _, _, labels in val_loader:
+        print(labels['NORM'])
+        break
 
-    # conf_mat = multilabel_confusion_matrix(y_true, y_pred)
-
-    # df_cm = pd.DataFrame(conf_mat, range(23), range(23))
-    # sn.set(font_scale=1.4)
-    # sn.heatmap(df_cm, annot=True, annot_kws={"size": 16})
-    # plt.show()
-
-    # classes = (
-    #     'NORM','STTC','NST_','IMI','AMI','LVH','LAFB/LPFB','ISC_','IRBBB','_AVB','IVCD','ISCA','CRBBB','CLBBB',
-    #     'LAO/LAE','ISCI','LMI','RVH','RAO/RAE','WPW','ILBBB','SEHYP','PMI')
-    # cf_matrix = confusion_matrix(y_true, y_pred)
-    # df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index = [i for i in classes],
-    #                      columns = [i for i in classes])
-    # plt.figure(figsize = (12,7))
-    # sn.heatmap(df_cm, annot=True)
-    # plt.show()
+    classes = ('Normal', 'Abnormal')
+    cf_matrix = confusion_matrix(y_true, y_pred)
+    df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index = [i for i in classes],
+                        columns = [i for i in classes])
+    plt.figure(figsize = (12,7))
+    sn.heatmap(df_cm, annot=True)
+    plt.show()
