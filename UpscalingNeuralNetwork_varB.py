@@ -14,7 +14,7 @@ from torch.nn import BCEWithLogitsLoss
 from tqdm import tqdm
 from copy import deepcopy
 
-from sklearn.metrics import confusion_matrix, accuracy_score
+from sklearn.metrics import confusion_matrix, accuracy_score, multilabel_confusion_matrix, hamming_loss,ConfusionMatrixDisplay
 
 import torch.nn as nn
 import torch
@@ -267,6 +267,9 @@ if __name__=="__main__":
         model.load_state_dict(torch.load(os.path.join(path, f'upscale_model{model_version}.chpt')))
 
     model.eval()
+    
+    y_true = []
+    y_pred = []
 
     def data_test(model, signal, ytrue):
         pred = model(signal.view(signal.shape[0], 6, 4000))
@@ -322,6 +325,42 @@ if __name__=="__main__":
             count_true['INJLA']+= ytrue['INJLA'][i]
             count_true['PMI']+= ytrue['PMI'][i]
             count_true['INJIL']+= ytrue['INJIL'][i]
+
+            y_true.append([
+                ytrue['NORM'][i],
+                ytrue['IMI'][i],
+                ytrue['ASMI'][i],
+                ytrue['ILMI'][i],
+                ytrue['AMI'][i],
+                ytrue['ALMI'][i],
+                ytrue['INJAS'][i],
+                ytrue['LMI'][i],
+                ytrue['INJAL'][i],
+                ytrue['IPLMI'][i],
+                ytrue['IPMI'][i],
+                ytrue['INJIN'][i],
+                ytrue['INJLA'][i],
+                ytrue['PMI'][i],
+                ytrue['INJIL'][i],
+            ])
+
+            y_pred.append([
+                pred[i][0],
+                pred[i][1],
+                pred[i][2],
+                pred[i][3],
+                pred[i][4],
+                pred[i][5],
+                pred[i][6],
+                pred[i][7],
+                pred[i][8],
+                pred[i][9],
+                pred[i][10],
+                pred[i][11],
+                pred[i][12],
+                pred[i][13],
+                pred[i][14]   
+            ])
 
     count_pred = {
         'NORM': 0,
@@ -385,3 +424,26 @@ if __name__=="__main__":
         #print(accs[key])
         accs[key] = torch.stack(accs[key]).float().sum()/len(accs[key])
         print(f'{key}: {accs[key]:.3f}% ({count_pred[key]}/{count_true[key]})')
+
+    print('Hamming Loss:', hamming_loss(y_true, y_pred))
+    print('Multilabel Confusion:\n', multilabel_confusion_matrix(y_true, y_pred))
+
+    f, axes = plt.subplots(3, 5, figsize=(25, 15))
+    axes = axes.ravel()
+
+    ml_conf = multilabel_confusion_matrix(y_true, y_pred)
+
+    for i in range(15):
+        # disp = ConfusionMatrixDisplay(confusion_matrix(y_true[:, i],
+        #                                             y_pred[:, i]),
+        #                             display_labels=[0, i])
+        # disp = ConfusionMatrixDisplay(ml_conf[i],
+        #                             display_labels=['Others', list(accs.keys())[i]])
+        df_cm = pd.DataFrame(ml_conf[i], index = ['Others', list(accs.keys())[i]],
+                        columns = ['Others', list(accs.keys())[i]])
+        
+        labels =  ['Others', list(accs.keys())[i]]
+        
+        disp = sn.heatmap(ml_conf[i], ax=axes[i], annot=True, fmt='.4g', xticklabels=labels, yticklabels=labels)
+    plt.subplots_adjust(wspace=0.10, hspace=0.1)
+    plt.show()

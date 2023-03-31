@@ -13,7 +13,7 @@ from torch.nn import CrossEntropyLoss
 from tqdm import tqdm
 from copy import deepcopy
 
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, accuracy_score, f1_score, precision_score, recall_score
 
 import torch.nn as nn
 import torch
@@ -72,6 +72,7 @@ class FinetunedCNN(nn.Module):
 
 def train(model, train_loader, optimizer, loss_fun, device):
     model.train()
+    run_loss = 0
     
     for i, (signal, _, _, targets) in enumerate(tqdm(train_loader, desc='Train')):
         signal = signal.to(device)
@@ -99,9 +100,10 @@ def train(model, train_loader, optimizer, loss_fun, device):
             
         # update
         optimizer.step()
+        run_loss += loss.item()
 
     #print(loss)
-    return loss.item()
+    return run_loss / len(train_loader)
 
 def test(model, test_loader, device):
     model.eval()    
@@ -143,7 +145,7 @@ def loadModel():
 def main():
     num_epochs = 150
     num_folds = 5
-    depth = '10.fBase'
+    depth = '10.fBasev2'
     lr = 0.005
     
     best_acc = 0
@@ -231,7 +233,7 @@ if __name__=="__main__":
 
 
     path = "G:\\Projects\\MA\\models"
-    model_version = '10.fBase'
+    model_version = 'finalBasev2'
 
     recalculate = False
 
@@ -261,9 +263,11 @@ if __name__=="__main__":
         labels = labels['MI'].cpu().numpy()
         y_true.extend(labels) # Save Truth
 
-    for inputs, _, _, labels in val_loader:
-        print(labels['MI'])
-        break
+
+    print('Accuracy: ', accuracy_score(y_true, y_pred))
+    print('Precision: ', precision_score(y_true, y_pred))
+    print('Recall: ', recall_score(y_true, y_pred))
+    print('F1 Score: ', f1_score(y_true, y_pred))
 
     classes = ('MI', 'non-MI')
     cf_matrix = confusion_matrix(y_true, y_pred)

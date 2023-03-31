@@ -15,7 +15,7 @@ from torch.nn import BCEWithLogitsLoss
 from tqdm import tqdm
 from copy import deepcopy
 
-from sklearn.metrics import confusion_matrix, accuracy_score, multilabel_confusion_matrix, hamming_loss
+from sklearn.metrics import confusion_matrix, accuracy_score, multilabel_confusion_matrix, hamming_loss,ConfusionMatrixDisplay, f1_score, precision_score, recall_score
 
 import torch.nn as nn
 import torch
@@ -195,7 +195,7 @@ def main():
     num_epochs = 150
     num_folds = 5
     depth = '10.f'
-    lr_adam = 5e-3
+    lr_adam = 3e-3
 
     best_acc = 0
     epoch_since_best = 0
@@ -459,3 +459,27 @@ if __name__=="__main__":
 
     print('Hamming Loss:', hamming_loss(y_true, y_pred))
     print('Multilabel Confusion:\n', multilabel_confusion_matrix(y_true, y_pred))
+    print('Accuracy: ', accuracy_score(y_true, y_pred))
+    print('Precision: ', precision_score(y_true, y_pred))
+    print('Recall: ', recall_score(y_true, y_pred))
+    print('F1 Score: ', f1_score(y_true, y_pred))
+
+    f, axes = plt.subplots(3, 5, figsize=(25, 15))
+    axes = axes.ravel()
+
+    ml_conf = multilabel_confusion_matrix(y_true, y_pred)
+
+    for i in range(15):
+        # disp = ConfusionMatrixDisplay(confusion_matrix(y_true[:, i],
+        #                                             y_pred[:, i]),
+        #                             display_labels=[0, i])
+        # disp = ConfusionMatrixDisplay(ml_conf[i],
+        #                             display_labels=['Others', list(accs.keys())[i]])
+        df_cm = pd.DataFrame(ml_conf[i], index = ['Others', list(accs.keys())[i]],
+                        columns = ['Others', list(accs.keys())[i]])
+        
+        labels =  ['Others', list(accs.keys())[i]]
+        
+        disp = sn.heatmap(ml_conf[i], ax=axes[i], annot=True, fmt='.4g', xticklabels=labels, yticklabels=labels)
+    plt.subplots_adjust(wspace=0.10, hspace=0.1)
+    plt.show()

@@ -14,7 +14,7 @@ from torch.nn import BCEWithLogitsLoss
 from tqdm import tqdm
 from copy import deepcopy
 
-from sklearn.metrics import confusion_matrix, accuracy_score
+from sklearn.metrics import confusion_matrix, accuracy_score, multilabel_confusion_matrix, hamming_loss,ConfusionMatrixDisplay
 
 import torch.nn as nn
 import torch
@@ -342,21 +342,21 @@ if __name__=="__main__":
             count_true['INJIL']+= ytrue['INJIL'][i]
 
             y_true.append([
-                targets['NORM'][i],
-                targets['IMI'][i],
-                targets['ASMI'][i],
-                targets['ILMI'][i],
-                targets['AMI'][i],
-                targets['ALMI'][i],
-                targets['INJAS'][i],
-                targets['LMI'][i],
-                targets['INJAL'][i],
-                targets['IPLMI'][i],
-                targets['IPMI'][i],
-                targets['INJIN'][i],
-                targets['INJLA'][i],
-                targets['PMI'][i],
-                targets['INJIL'][i],
+                ytrue['NORM'][i],
+                ytrue['IMI'][i],
+                ytrue['ASMI'][i],
+                ytrue['ILMI'][i],
+                ytrue['AMI'][i],
+                ytrue['ALMI'][i],
+                ytrue['INJAS'][i],
+                ytrue['LMI'][i],
+                ytrue['INJAL'][i],
+                ytrue['IPLMI'][i],
+                ytrue['IPMI'][i],
+                ytrue['INJIN'][i],
+                ytrue['INJLA'][i],
+                ytrue['PMI'][i],
+                ytrue['INJIL'][i],
             ])
 
             y_pred.append([
@@ -439,3 +439,27 @@ if __name__=="__main__":
         #print(accs[key])
         accs[key] = torch.stack(accs[key]).float().sum()/len(accs[key])
         print(f'{key}: {accs[key]:.3f}% ({count_pred[key]}/{count_true[key]})')
+
+    print('Hamming Loss:', hamming_loss(y_true, y_pred))
+    print('Multilabel Confusion:\n', multilabel_confusion_matrix(y_true, y_pred))
+
+    f, axes = plt.subplots(3, 5, figsize=(25, 15))
+    axes = axes.ravel()
+
+    ml_conf = multilabel_confusion_matrix(y_true, y_pred)
+
+    for i in range(15):
+        # disp = ConfusionMatrixDisplay(confusion_matrix(y_true[:, i],
+        #                                             y_pred[:, i]),
+        #                             display_labels=[0, i])
+        # disp = ConfusionMatrixDisplay(ml_conf[i],
+        #                             display_labels=['Others', list(accs.keys())[i]])
+        df_cm = pd.DataFrame(ml_conf[i], index = ['Others', list(accs.keys())[i]],
+                        columns = ['Others', list(accs.keys())[i]])
+        
+        labels =  ['Others', list(accs.keys())[i]]
+        
+        disp = sn.heatmap(ml_conf[i], ax=axes[i], annot=True, fmt='.4g', xticklabels=labels, yticklabels=labels)
+    plt.subplots_adjust(wspace=0.10, hspace=0.1)
+    plt.show()
+
