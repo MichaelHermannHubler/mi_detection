@@ -1,6 +1,5 @@
 from ds_PTBXL import *
 import Utils as utls
-from GeneralNeuralNet import CNN
 
 import torch.nn as nn
 import seaborn as sn
@@ -15,64 +14,32 @@ from torch.nn import BCEWithLogitsLoss
 from tqdm import tqdm
 from copy import deepcopy
 
-from sklearn.metrics import confusion_matrix, accuracy_score, multilabel_confusion_matrix, hamming_loss
+from sklearn.metrics import confusion_matrix, accuracy_score
 
 import torch.nn as nn
 import torch
 import pickle
 
+from SpecialistNeuralNetwork import CNN, FinetunedCNN
+
 # create the new model
-class FinetunedCNN(nn.Module):
-    def __init__(self, generalizationModel:CNN):
-        super(FinetunedCNN, self).__init__()
-
-        # initialize the same architecture as the existing CNN model
-        self.conv1 = generalizationModel.conv1
-        self.conv2 = generalizationModel.conv2
-        self.conv3 = generalizationModel.conv3
-        self.conv4 = generalizationModel.conv4
-        self.conv5 = generalizationModel.conv5
-        self.conv6 = generalizationModel.conv6
-        self.conv7 = generalizationModel.conv7
-        self.conv8 = generalizationModel.conv8
-        self.conv9 = generalizationModel.conv9
-        self.conv10 = generalizationModel.conv10
-
-        self.conv11 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
-        self.conv12 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
-
-        self.lin1 = nn.Sequential(
-            nn.Dropout(p=0.6),
-            nn.Linear(192, 1024),
-            nn.Dropout(p=0.6),
-            nn.LeakyReLU(),
-        )
-
-        self.out = utls.OutputBlock(in_channels=1024, out_channels=15)
+class UpscalingCNN(nn.Module):
+    def __init__(self, specializationModel, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+        super(UpscalingCNN, self).__init__()
+        self.device = device
+        self.specializationModel = specializationModel
 
         self.is_conv = True
 
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.conv5(x)
-        x = self.conv6(x)
-        x = self.conv7(x)
-        x = self.conv8(x)
-        x = self.conv9(x)
-        x = self.conv10(x)
-        x = self.conv11(x)
-        x = self.conv12(x)
+        zeros = torch.zeros(x.shape[0], 6,4000).to(self.device)
 
-        x = x.view(x.size(0), -1)
+        # for i in range(x.shape[0]):  
+        #     x[i] = torch.cat((x[i], zeros), dim=0)
+        x = torch.cat((x, zeros), dim=1)
+        x = self.specializationModel(x)
 
-        x = self.lin1(x)
-        # x = self.lin2(x)
-        # x = self.lin3(x)
-
-        return self.out(x)
+        return x
 
 
 def train(model, train_loader, optimizer, loss_fun, device):
@@ -109,7 +76,7 @@ def train(model, train_loader, optimizer, loss_fun, device):
         bs = signal.shape[0]
 
         # fully connected model: we need to flatten the signals
-        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 4000)
+        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 6, 4000)
 
         # signal to device
         x = x.to(device)
@@ -161,7 +128,7 @@ def test(model, test_loader, device):
 
         bs = signal.shape[0]
 
-        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 4000)
+        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 6, 4000)
         x = x.to(device)
 
         out = model(x)
@@ -185,16 +152,17 @@ def criterion(loss_func, outputs, labels, device):
 
 def loadModel():
     generalizationModel = CNN()
-    generalizationModel.load_state_dict(torch.load("G:\\Projects\\MA\\models\\" + 'modelfinal.chpt'))
+    spezialisationModel = FinetunedCNN(generalizationModel)
+    spezialisationModel.load_state_dict(torch.load("G:\\Projects\\MA\\models\\" + 'spec_modelfinal.chpt'))
 
-    model = FinetunedCNN(generalizationModel)
+    model = UpscalingCNN(spezialisationModel)
 
     return model
 
 def main():
     num_epochs = 150
     num_folds = 5
-    depth = '10.f'
+    depth = '10.fvB'
     lr_adam = 5e-3
 
     best_acc = 0
@@ -246,22 +214,22 @@ def main():
 
         plt.plot(tr_loss, label='train loss')
         plt.legend()
-        plt.savefig(f'G:\Projects\MA\images\SNN\{depth}_Layers_{fold + 1}_Loss_lr{lr}.png')
+        plt.savefig(f'G:\Projects\MA\images\\UNN\{depth}_Layers_{fold + 1}_Loss_lr{lr}.png')
         plt.clf()
 
         plt.plot(tr_acc, label='train accuracy')
         plt.plot(te_acc, label='test accuracy')
         plt.legend()
-        plt.savefig(f'G:\Projects\MA\images\SNN\{depth}_Layers_{fold + 1}_Acc_lr{lr}.png')
+        plt.savefig(f'G:\Projects\MA\images\\UNN\{depth}_Layers_{fold + 1}_Acc_lr{lr}.png')
         plt.clf()
 
-        with open(f'G:\Projects\MA\\variables\SNN\{depth}_Layers_{fold + 1}_train_loss.pkl', 'wb') as f:
+        with open(f'G:\Projects\MA\\variables\\UNN\{depth}_Layers_{fold + 1}_train_loss.pkl', 'wb') as f:
             pickle.dump(tr_loss, f)
 
-        with open(f'G:\Projects\MA\\variables\SNN\{depth}_Layers_{fold + 1}_train_acc.pkl', 'wb') as f:
+        with open(f'G:\Projects\MA\\variables\\UNN\{depth}_Layers_{fold + 1}_train_acc.pkl', 'wb') as f:
             pickle.dump(tr_acc, f)
 
-        with open(f'G:\Projects\MA\\variables\SNN\{depth}_Layers_{fold + 1}_test_acc.pkl', 'wb') as f:
+        with open(f'G:\Projects\MA\\variables\\UNN\{depth}_Layers_{fold + 1}_test_acc.pkl', 'wb') as f:
             pickle.dump(te_acc, f)
 
     print(f'Best test acc = {best_acc:.5f}')
@@ -274,9 +242,9 @@ def loadLayer(state_dict, layerName, layer):
     layer.bias = state_dict[layerName + 'bias']
 
 if __name__=="__main__":
-    train_dataset = PTBXLDataset(folds=range(1,5), train_mode=True)
-    test_dataset = PTBXLDataset(folds=[9])
-    val_dataset = PTBXLDataset(folds=[10])
+    train_dataset = PTBXLDataset(folds=range(6,8), leads=range(6))
+    test_dataset = PTBXLDataset(folds=[9], leads=range(6))
+    val_dataset = PTBXLDataset(folds=[10], leads=range(6))
 
     train_loader = train_dataset.get_full_loader(use_sampler=True)
     trainacc_loader = train_dataset.get_full_loader()
@@ -284,27 +252,24 @@ if __name__=="__main__":
     val_loader = val_dataset.get_full_loader()
 
     path = "G:\\Projects\\MA\\models"
-    model_version = 'final'
+    model_version = '_vB_final'
 
     recalculate = False
 
-    if os.path.exists(os.path.join(path, f'spec_model{model_version}.chpt')) and not recalculate:
-        model = FinetunedCNN(CNN())
-        model.load_state_dict(torch.load(os.path.join(path, f'spec_model{model_version}.chpt')))
+    if os.path.exists(os.path.join(path, f'upscale_model{model_version}.chpt')) and not recalculate:
+        model = UpscalingCNN(FinetunedCNN(CNN()), device='cpu')
+        model.load_state_dict(torch.load(os.path.join(path, f'upscale_model{model_version}.chpt')))
     else:
         model = main()
-        torch.save(model.state_dict(), os.path.join(path, f'spec_model{model_version}.chpt'))
+        torch.save(model.state_dict(), os.path.join(path, f'upscale_model{model_version}.chpt'))
 
-        model = FinetunedCNN(CNN())
-        model.load_state_dict(torch.load(os.path.join(path, f'spec_model{model_version}.chpt')))
+        model = UpscalingCNN(FinetunedCNN(CNN()), device='cpu')
+        model.load_state_dict(torch.load(os.path.join(path, f'upscale_model{model_version}.chpt')))
 
     model.eval()
-    
-    y_true = []
-    y_pred = []
 
     def data_test(model, signal, ytrue):
-        pred = model(signal.view(signal.shape[0], 12, 4000))
+        pred = model(signal.view(signal.shape[0], 6, 4000))
         pred = torch.sigmoid(pred)
         pred = torch.round(pred)
         pred = pred.cpu().detach().numpy()
@@ -357,42 +322,6 @@ if __name__=="__main__":
             count_true['INJLA']+= ytrue['INJLA'][i]
             count_true['PMI']+= ytrue['PMI'][i]
             count_true['INJIL']+= ytrue['INJIL'][i]
-
-            y_true.append([
-                ytrue['NORM'][i],
-                ytrue['IMI'][i],
-                ytrue['ASMI'][i],
-                ytrue['ILMI'][i],
-                ytrue['AMI'][i],
-                ytrue['ALMI'][i],
-                ytrue['INJAS'][i],
-                ytrue['LMI'][i],
-                ytrue['INJAL'][i],
-                ytrue['IPLMI'][i],
-                ytrue['IPMI'][i],
-                ytrue['INJIN'][i],
-                ytrue['INJLA'][i],
-                ytrue['PMI'][i],
-                ytrue['INJIL'][i],
-            ])
-
-            y_pred.append([
-                pred[i][0],
-                pred[i][1],
-                pred[i][2],
-                pred[i][3],
-                pred[i][4],
-                pred[i][5],
-                pred[i][6],
-                pred[i][7],
-                pred[i][8],
-                pred[i][9],
-                pred[i][10],
-                pred[i][11],
-                pred[i][12],
-                pred[i][13],
-                pred[i][14]   
-            ])
 
     count_pred = {
         'NORM': 0,
@@ -456,6 +385,3 @@ if __name__=="__main__":
         #print(accs[key])
         accs[key] = torch.stack(accs[key]).float().sum()/len(accs[key])
         print(f'{key}: {accs[key]:.3f}% ({count_pred[key]}/{count_true[key]})')
-
-    print('Hamming Loss:', hamming_loss(y_true, y_pred))
-    print('Multilabel Confusion:\n', multilabel_confusion_matrix(y_true, y_pred))

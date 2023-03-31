@@ -1,6 +1,5 @@
 from ds_PTBXL import *
 import Utils as utls
-from GeneralNeuralNet import CNN
 
 import torch.nn as nn
 import seaborn as sn
@@ -15,72 +14,44 @@ from torch.nn import BCEWithLogitsLoss
 from tqdm import tqdm
 from copy import deepcopy
 
-from sklearn.metrics import confusion_matrix, accuracy_score, multilabel_confusion_matrix, hamming_loss
+from sklearn.metrics import confusion_matrix, accuracy_score
 
 import torch.nn as nn
 import torch
 import pickle
 
+from SpecialistNeuralNetworkwAge import CNN, FinetunedCNN
+
 # create the new model
-class FinetunedCNN(nn.Module):
-    def __init__(self, generalizationModel:CNN):
-        super(FinetunedCNN, self).__init__()
-
-        # initialize the same architecture as the existing CNN model
-        self.conv1 = generalizationModel.conv1
-        self.conv2 = generalizationModel.conv2
-        self.conv3 = generalizationModel.conv3
-        self.conv4 = generalizationModel.conv4
-        self.conv5 = generalizationModel.conv5
-        self.conv6 = generalizationModel.conv6
-        self.conv7 = generalizationModel.conv7
-        self.conv8 = generalizationModel.conv8
-        self.conv9 = generalizationModel.conv9
-        self.conv10 = generalizationModel.conv10
-
-        self.conv11 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
-        self.conv12 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
-
-        self.lin1 = nn.Sequential(
-            nn.Dropout(p=0.6),
-            nn.Linear(192, 1024),
-            nn.Dropout(p=0.6),
+class UpscalingCNN(nn.Module):
+    def __init__(self, specializationModel):
+        super(UpscalingCNN, self).__init__()
+        self.upscaler = nn.Sequential(         
+            nn.Conv1d(in_channels=6, out_channels=12, kernel_size=50, stride=1, padding=25),                
             nn.LeakyReLU(),
+            nn.Dropout1d(p=0.1),
+            nn.BatchNorm1d(12),
         )
 
-        self.out = utls.OutputBlock(in_channels=1024, out_channels=15)
+        self.specializationModel = specializationModel
 
         self.is_conv = True
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.conv5(x)
-        x = self.conv6(x)
-        x = self.conv7(x)
-        x = self.conv8(x)
-        x = self.conv9(x)
-        x = self.conv10(x)
-        x = self.conv11(x)
-        x = self.conv12(x)
+    def forward(self, x, sex, age):
+        x = self.upscaler(x)
+        x = self.specializationModel(x, sex, age)
 
-        x = x.view(x.size(0), -1)
-
-        x = self.lin1(x)
-        # x = self.lin2(x)
-        # x = self.lin3(x)
-
-        return self.out(x)
+        return x
 
 
 def train(model, train_loader, optimizer, loss_fun, device):
     model.train()
     run_loss = 0
 
-    for i, (signal, _, _, targets) in enumerate(tqdm(train_loader, desc='Train')):
+    for i, (signal, sex, age, targets) in enumerate(tqdm(train_loader, desc='Train')):
         signal = signal.to(device)
+        sex = sex.to(device)
+        age = age.to(device)
         #targets = targets.values().to(device)
         labels = []
         for item in range(targets['NORM'].shape[0]):
@@ -109,7 +80,9 @@ def train(model, train_loader, optimizer, loss_fun, device):
         bs = signal.shape[0]
 
         # fully connected model: we need to flatten the signals
-        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 4000)
+        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 6, 4000)
+        sex = sex.view(bs,-1) if not model.is_conv else sex.view(bs, 1)
+        age = age.view(bs,-1) if not model.is_conv else age.view(bs, 1)
 
         # signal to device
         x = x.to(device)
@@ -118,7 +91,7 @@ def train(model, train_loader, optimizer, loss_fun, device):
         optimizer.zero_grad()
 
         # forward pass
-        out = model(x)
+        out = model(x, sex, age)
 
         # calc loss and gradients
 
@@ -135,8 +108,10 @@ def test(model, test_loader, device):
     model.eval()
 
     accs = []
-    for i, (signal, _, _, targets) in enumerate(tqdm(test_loader, desc='Test')):
+    for i, (signal, sex, age, targets) in enumerate(tqdm(test_loader, desc='Test')):
         signal = signal.to(device)
+        sex = sex.to(device)
+        age = age.to(device)
         labels = []
         for item in range(targets['NORM'].shape[0]):
             labels.append([
@@ -161,10 +136,12 @@ def test(model, test_loader, device):
 
         bs = signal.shape[0]
 
-        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 4000)
+        x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 6, 4000)
+        sex = sex.view(bs,-1) if not model.is_conv else sex.view(bs, 1)
+        age = age.view(bs,-1) if not model.is_conv else age.view(bs, 1)
         x = x.to(device)
 
-        out = model(x)
+        out = model(x, sex, age)
         out = torch.sigmoid(out)
         out = torch.round(out)
         out = out.cpu().detach().numpy()
@@ -185,9 +162,10 @@ def criterion(loss_func, outputs, labels, device):
 
 def loadModel():
     generalizationModel = CNN()
-    generalizationModel.load_state_dict(torch.load("G:\\Projects\\MA\\models\\" + 'modelfinal.chpt'))
+    spezialisationModel = FinetunedCNN(generalizationModel)
+    spezialisationModel.load_state_dict(torch.load("G:\\Projects\\MA\\models\\" + 'spec_modelfinal_withAge.chpt'))
 
-    model = FinetunedCNN(generalizationModel)
+    model = UpscalingCNN(spezialisationModel)
 
     return model
 
@@ -246,22 +224,22 @@ def main():
 
         plt.plot(tr_loss, label='train loss')
         plt.legend()
-        plt.savefig(f'G:\Projects\MA\images\SNN\{depth}_Layers_{fold + 1}_Loss_lr{lr}.png')
+        plt.savefig(f'G:\Projects\MA\images\\UNN\{depth}_Layers_withAge_{fold + 1}_Loss_lr{lr}.png')
         plt.clf()
 
         plt.plot(tr_acc, label='train accuracy')
         plt.plot(te_acc, label='test accuracy')
         plt.legend()
-        plt.savefig(f'G:\Projects\MA\images\SNN\{depth}_Layers_{fold + 1}_Acc_lr{lr}.png')
+        plt.savefig(f'G:\Projects\MA\images\\UNN\{depth}_Layers_withAge_{fold + 1}_Acc_lr{lr}.png')
         plt.clf()
 
-        with open(f'G:\Projects\MA\\variables\SNN\{depth}_Layers_{fold + 1}_train_loss.pkl', 'wb') as f:
+        with open(f'G:\Projects\MA\\variables\\UNN\{depth}_Layers_withAge_{fold + 1}_train_loss.pkl', 'wb') as f:
             pickle.dump(tr_loss, f)
 
-        with open(f'G:\Projects\MA\\variables\SNN\{depth}_Layers_{fold + 1}_train_acc.pkl', 'wb') as f:
+        with open(f'G:\Projects\MA\\variables\\UNN\{depth}_Layers_withAge_{fold + 1}_train_acc.pkl', 'wb') as f:
             pickle.dump(tr_acc, f)
 
-        with open(f'G:\Projects\MA\\variables\SNN\{depth}_Layers_{fold + 1}_test_acc.pkl', 'wb') as f:
+        with open(f'G:\Projects\MA\\variables\\UNN\{depth}_Layers_withAge_{fold + 1}_test_acc.pkl', 'wb') as f:
             pickle.dump(te_acc, f)
 
     print(f'Best test acc = {best_acc:.5f}')
@@ -274,9 +252,9 @@ def loadLayer(state_dict, layerName, layer):
     layer.bias = state_dict[layerName + 'bias']
 
 if __name__=="__main__":
-    train_dataset = PTBXLDataset(folds=range(1,5), train_mode=True)
-    test_dataset = PTBXLDataset(folds=[9])
-    val_dataset = PTBXLDataset(folds=[10])
+    train_dataset = PTBXLDataset(folds=range(6,8), leads=range(6))
+    test_dataset = PTBXLDataset(folds=[9], leads=range(6))
+    val_dataset = PTBXLDataset(folds=[10], leads=range(6))
 
     train_loader = train_dataset.get_full_loader(use_sampler=True)
     trainacc_loader = train_dataset.get_full_loader()
@@ -288,23 +266,28 @@ if __name__=="__main__":
 
     recalculate = False
 
-    if os.path.exists(os.path.join(path, f'spec_model{model_version}.chpt')) and not recalculate:
-        model = FinetunedCNN(CNN())
-        model.load_state_dict(torch.load(os.path.join(path, f'spec_model{model_version}.chpt')))
+    if os.path.exists(os.path.join(path, f'upscale_model{model_version}_withAge.chpt')) and not recalculate:
+        model = UpscalingCNN(FinetunedCNN(CNN()))
+        model.load_state_dict(torch.load(os.path.join(path, f'upscale_model{model_version}_withAge.chpt')))
     else:
         model = main()
-        torch.save(model.state_dict(), os.path.join(path, f'spec_model{model_version}.chpt'))
+        torch.save(model.state_dict(), os.path.join(path, f'upscale_model{model_version}_withAge.chpt'))
 
-        model = FinetunedCNN(CNN())
-        model.load_state_dict(torch.load(os.path.join(path, f'spec_model{model_version}.chpt')))
+        model = UpscalingCNN(FinetunedCNN(CNN()))
+        model.load_state_dict(torch.load(os.path.join(path, f'upscale_model{model_version}_withAge.chpt')))
 
     model.eval()
-    
+
     y_true = []
     y_pred = []
 
-    def data_test(model, signal, ytrue):
-        pred = model(signal.view(signal.shape[0], 12, 4000))
+    def data_test(model, signal, ytrue, sex, age):
+        signal = signal.view(signal.shape[0], 6, 4000)
+        sex = sex.view(signal.shape[0], 1)
+        age = age.view(signal.shape[0], 1)
+
+
+        pred = model(signal, sex, age)
         pred = torch.sigmoid(pred)
         pred = torch.round(pred)
         pred = pred.cpu().detach().numpy()
@@ -359,21 +342,21 @@ if __name__=="__main__":
             count_true['INJIL']+= ytrue['INJIL'][i]
 
             y_true.append([
-                ytrue['NORM'][i],
-                ytrue['IMI'][i],
-                ytrue['ASMI'][i],
-                ytrue['ILMI'][i],
-                ytrue['AMI'][i],
-                ytrue['ALMI'][i],
-                ytrue['INJAS'][i],
-                ytrue['LMI'][i],
-                ytrue['INJAL'][i],
-                ytrue['IPLMI'][i],
-                ytrue['IPMI'][i],
-                ytrue['INJIN'][i],
-                ytrue['INJLA'][i],
-                ytrue['PMI'][i],
-                ytrue['INJIL'][i],
+                targets['NORM'][i],
+                targets['IMI'][i],
+                targets['ASMI'][i],
+                targets['ILMI'][i],
+                targets['AMI'][i],
+                targets['ALMI'][i],
+                targets['INJAS'][i],
+                targets['LMI'][i],
+                targets['INJAL'][i],
+                targets['IPLMI'][i],
+                targets['IPMI'][i],
+                targets['INJIN'][i],
+                targets['INJLA'][i],
+                targets['PMI'][i],
+                targets['INJIL'][i],
             ])
 
             y_pred.append([
@@ -449,13 +432,10 @@ if __name__=="__main__":
     }
     i = 0
     
-    for inputs, _, _, labels in val_loader:
-        data_test(model, inputs, labels)
+    for inputs, sex, age, labels in val_loader:
+        data_test(model, inputs, labels, sex, age)
 
     for i, key in enumerate(accs):
         #print(accs[key])
         accs[key] = torch.stack(accs[key]).float().sum()/len(accs[key])
         print(f'{key}: {accs[key]:.3f}% ({count_pred[key]}/{count_true[key]})')
-
-    print('Hamming Loss:', hamming_loss(y_true, y_pred))
-    print('Multilabel Confusion:\n', multilabel_confusion_matrix(y_true, y_pred))

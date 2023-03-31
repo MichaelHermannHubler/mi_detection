@@ -30,6 +30,7 @@ def loadCPSC2018() -> pd.DataFrame:
     else:
         path = rootDirPath + 'cpsc2018/Reference.csv'
         cpsc2018_meta = pd.read_csv(path)
+
         cpsc2018_meta_cleaned = cpsc2018_meta[['Recording', 'First_label']]
         
         cpsc2018_meta_cleaned['sex'] = cpsc2018_meta_cleaned.apply(getCPSC2018SexDataFromMatlab, axis = 1)        
@@ -46,7 +47,9 @@ def loadCPSC2018() -> pd.DataFrame:
 
         cpsc2018_meta_cleaned['fileName'] = f'{rootDirPath}\cpsc2018\data\\' + cpsc2018_meta_cleaned['Recording'] + ".mat"
 
+        cpsc2018_meta_cleaned = cpsc2018_meta_cleaned[cpsc2018_meta_cleaned['age'] > 0]
         cpsc2018_meta_cleaned.drop(['Recording', 'First_label'], axis=1, inplace=True)
+        cpsc2018_meta_cleaned.reset_index(drop=True, inplace=True)
 
         cpsc2018_meta_cleaned.to_pickle(os.path.join(rootDirPath, "cpsc2018_data.pkl"))
 
@@ -75,6 +78,9 @@ def loadCPSC2018Extra() -> pd.DataFrame:
         meta.loc[meta['sex'] == 'Female', 'sex'] = 1
 
         meta.age = meta.age.astype('float')
+
+        meta = meta[meta['age'] > 0]
+        meta.reset_index(drop=True, inplace=True)
         meta.to_pickle(os.path.join(rootDirPath, "cpsc2018-extra_data.pkl"))
 
     return meta
@@ -100,6 +106,8 @@ def loadChapmanShaoxing() -> Tuple[pd.DataFrame, pd.DataFrame]:
         meta.loc[meta['sex'] == 'Female', 'sex'] = 1
 
         meta.age = meta.age.astype('float')
+
+
         meta.to_pickle(os.path.join(rootDirPath, "chapman-shaoxing_data.pkl"))
 
     return meta
@@ -125,6 +133,8 @@ def loadGeorgia() -> Tuple[pd.DataFrame, pd.DataFrame]:
         meta.loc[meta['sex'] == 'Female', 'sex'] = 1
         
         meta.age = meta.age.astype('float')
+        meta.dropna(inplace=True)
+        meta.reset_index(drop=True, inplace=True)
         meta.to_pickle(os.path.join(rootDirPath, "georgia_data.pkl"))
 
     return meta
@@ -148,8 +158,13 @@ def loadNingbo() -> Tuple[pd.DataFrame, pd.DataFrame]:
         meta = pd.DataFrame(data={'fileName':fileNames, 'age':Ages, 'sex':Sexes, 'diagnostics':Diagnostics})
         meta.loc[meta['sex'] == 'Male', 'sex'] = 0
         meta.loc[meta['sex'] == 'Female', 'sex'] = 1
+
+        meta = meta[meta.sex != 'Unknown']
         
+        meta.dropna(inplace=True)
         meta.age = meta.age.astype('float')
+        meta.reset_index(drop=True, inplace=True)
+        
         meta.to_pickle(os.path.join(rootDirPath, "ningbo_data.pkl"))
 
     return meta
@@ -379,13 +394,13 @@ def convertSNOMEDCTCodeToBinaryLabel(code: int) -> int:
     return 0
 
 class ConvolutionBlock(torch.nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, kernel_size=5, conv_stride=1, padding=3, pool_stride=2):
         super(ConvolutionBlock, self).__init__()
-        self.conv = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=5, stride=2, padding=3)
-        self.relu = nn.ReLU()
+        self.conv = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=conv_stride, padding=padding)
+        self.relu = nn.LeakyReLU()
         self.drop_layer = nn.Dropout1d(p=0.1)
         self.batchNorm = nn.BatchNorm1d(out_channels)
-        self.pool = nn.MaxPool1d(3, stride=1)
+        self.pool = nn.MaxPool1d(2, stride=pool_stride, padding=1)
 
 
     def forward(self, x):
@@ -401,8 +416,8 @@ class OutputBlock(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super(OutputBlock, self).__init__()
         self.out = nn.Sequential(         
-            nn.Dropout(p=0.2),
             nn.Linear(in_channels, out_channels),
+            nn.Dropout(p=0.2),
         )
     
     #TODO init weights
@@ -436,4 +451,24 @@ def getTracingFromH5(exam_id, file_path):
 if __name__=="__main__":
     print('Main Utils')
 
-   
+    data = loadPTBXL()
+    # print(len(data[data['NORM'] == 1]))
+    # print(len(data[data['NORM'] != 1]))
+    # print(len(data[data['IMI'] == 1]))
+    # print(len(data[data['ASMI'] == 1]))
+    # print(len(data[data['ILMI'] == 1]))
+    # print(len(data[data['AMI'] == 1]))
+    # print(len(data[data['ALMI'] == 1]))
+    # print(len(data[data['INJAS'] == 1]))
+    # print(len(data[data['LMI'] == 1]))
+    # print(len(data[data['INJAL'] == 1]))
+    # print(len(data[data['IPLMI'] == 1]))
+    # print(len(data[data['IPMI'] == 1]))
+    # print(len(data[data['INJIN'] == 1]))
+    # print(len(data[data['INJLA'] == 1]))
+    # print(len(data[data['PMI'] == 1]))
+    # print(len(data[data['INJIL'] == 1]))
+    print(len(data[data['strat_fold'] < 6]))
+    print(len(data[data['strat_fold'] < 8]))
+    print(len(data[data['strat_fold'] == 9]))
+    print(len(data[data['strat_fold'] == 10]))

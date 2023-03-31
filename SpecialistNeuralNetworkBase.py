@@ -18,41 +18,35 @@ from sklearn.metrics import confusion_matrix
 import torch.nn as nn
 import torch
 import pickle
+from GeneralNeuralNetwAge import CNN
 
 # create the new model
 class FinetunedCNN(nn.Module):
-    def __init__(self):
+    def __init__(self, generalizationModel:CNN = CNN()):
         super(FinetunedCNN, self).__init__()
 
         # initialize the same architecture as the existing CNN model
-        self.conv1 = utls.ConvolutionBlock(in_channels=12, out_channels=24)
-        self.conv2 = utls.ConvolutionBlock(in_channels=24, out_channels=24)
-        self.conv3 = utls.ConvolutionBlock(in_channels=24, out_channels=24)
-        self.conv4 = utls.ConvolutionBlock(in_channels=24, out_channels=36)
-        self.conv5 = utls.ConvolutionBlock(in_channels=36, out_channels=36)
-        self.conv6 = utls.ConvolutionBlock(in_channels=36, out_channels=36)
-        self.conv7 = utls.ConvolutionBlock(in_channels=36, out_channels=48)
-        self.conv8 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
-        self.conv9 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
-        self.conv10 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+        self.conv1 = generalizationModel.conv1
+        self.conv2 = generalizationModel.conv2
+        self.conv3 = generalizationModel.conv3
+        self.conv4 = generalizationModel.conv4
+        self.conv5 = generalizationModel.conv5
+        self.conv6 = generalizationModel.conv6
+        self.conv7 = generalizationModel.conv7
+        self.conv8 = generalizationModel.conv8
+        self.conv9 = generalizationModel.conv9
+        self.conv10 = generalizationModel.conv10
+
+        self.conv11 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
+        self.conv12 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
 
         self.lin1 = nn.Sequential(      
             nn.Dropout(p=0.2),
-            nn.Linear(96, 32),
-            nn.ReLU(),
-        )        
-        self.lin2 = nn.Sequential(      
-            nn.Dropout(p=0.2),
-            nn.Linear(32, 32),
+            nn.Linear(192, 1024),
             nn.ReLU(),
         )   
-        # self.lin3 = nn.Sequential(      
-        #     nn.Dropout(p=0.2),
-        #     nn.Linear(512, 128),
-        #     nn.ReLU(),
-        # )
 
-        self.norm = utls.OutputBlock(in_channels=32, out_channels=2)
+        self.norm = utls.OutputBlock(in_channels=1024, out_channels=2)
 
         self.is_conv = True 
 
@@ -67,12 +61,12 @@ class FinetunedCNN(nn.Module):
         x = self.conv8(x)
         x = self.conv9(x)
         x = self.conv10(x)
+        x = self.conv11(x)
+        x = self.conv12(x)
 
         x = x.view(x.size(0), -1)
 
         x = self.lin1(x)
-        x = self.lin2(x)
-        # x = self.lin3(x)
         
         return self.norm(x)
 
@@ -81,7 +75,7 @@ def train(model, train_loader, optimizer, loss_fun, device):
     
     for i, (signal, _, _, targets) in enumerate(tqdm(train_loader, desc='Train')):
         signal = signal.to(device)
-        targets = targets['NORM'].to(device)
+        targets = targets['MI'].to(device)
 
         # get batch size
         bs = signal.shape[0]
@@ -115,7 +109,7 @@ def test(model, test_loader, device):
     accs = []
     for i, (signal, _, _, targets) in enumerate(tqdm(test_loader, desc='Test')):
         signal = signal.to(device)
-        targets = targets['NORM'].to(device)
+        targets = targets['MI'].to(device)
         
         bs = signal.shape[0]
 
@@ -139,36 +133,21 @@ def criterion(loss_func, outputs, labels, device):
   return losses
 
 def loadModel():
-    model = FinetunedCNN()
+    generalizationModel = CNN()
+    generalizationModel.load_state_dict(torch.load("G:\\Projects\\MA\\models\\" + 'modelfinal_withAge.chpt'))
 
-    # load the weights from the file
-    state_dict = torch.load("G:\\Projects\\MA\\models\\" + 'model10layers.chpt')
-
-    utls.loadConvolutionBlockLayer(state_dict, 'conv1', model.conv1)
-    utls.loadConvolutionBlockLayer(state_dict, 'conv2', model.conv2)
-    utls.loadConvolutionBlockLayer(state_dict, 'conv3', model.conv3)
-    utls.loadConvolutionBlockLayer(state_dict, 'conv4', model.conv4)
-    utls.loadConvolutionBlockLayer(state_dict, 'conv5', model.conv5)
-    utls.loadConvolutionBlockLayer(state_dict, 'conv6', model.conv6)
-    utls.loadConvolutionBlockLayer(state_dict, 'conv7', model.conv7)
-    utls.loadConvolutionBlockLayer(state_dict, 'conv8', model.conv8)
-    utls.loadConvolutionBlockLayer(state_dict, 'conv9', model.conv8)
-    utls.loadConvolutionBlockLayer(state_dict, 'conv10', model.conv8)
-
-    # freeze layers
-    # for name, param in model.named_parameters():
-    #     if 'conv1' in name or 'conv2' in name or 'conv3' in name or 'conv4' in name or 'conv5' in name:
-    #         param.requiresGrad = False
+    model = FinetunedCNN(generalizationModel)
 
     return model
 
 def main():
     num_epochs = 150
-    num_folds = 10
-    depth = 10.6
+    num_folds = 5
+    depth = '10.fBase'
     lr = 0.005
     
     best_acc = 0
+    epoch_since_best = 0
     best_state = []
 
     for fold in range(num_folds):
@@ -184,21 +163,32 @@ def main():
         tr_loss = []
         tr_acc = []
         te_acc = []
-        best_run_acc = 0
+        best_run_acc = 0        
+        epoch_since_best_run = 0
+
         for epoch in range(num_epochs):
             loss = train(model, train_loader, optimizer, loss_fun, device)
             tr_loss.append(loss)
             tr_acc.append(test(model, train_loader, device))
             te_acc.append(test(model, test_loader, device))
+            
+            epoch_since_best_run += 1
+            epoch_since_best += 1
 
             if te_acc[-1] > best_run_acc:
                 best_run_acc = te_acc[-1]
+                epoch_since_best_run = 0
             
             if te_acc[-1] > best_acc:
                 best_acc = te_acc[-1]
                 best_state = deepcopy(model.state_dict())
+                epoch_since_best = 0
             
-            print(f'epoch [{epoch+1}/{num_epochs}]: train loss = {loss:.8f}, train acc = {tr_acc[-1]:.5f}, test acc = {te_acc[-1]:.5f}, best run acc = {best_run_acc:.5f}, best acc = {best_acc:.5f}')
+            print(f'epoch [{epoch+1}/{num_epochs}]: train loss = {loss:.8f}, train acc = {tr_acc[-1]:.5f}, test acc = {te_acc[-1]:.5f}, best run acc = {best_run_acc:.5f}({epoch_since_best_run}), best acc = {best_acc:.5f}({epoch_since_best})')
+            
+            if epoch_since_best_run > 20:
+                print(f'early stopping at epoch {epoch}')
+                break
         
         plt.plot(tr_loss, label='train loss')
         plt.legend()
@@ -231,10 +221,17 @@ def loadLayer(state_dict, layerName, layer):
 
 
 if __name__=="__main__":
-    dataset = PTBXLDataset(labels = ['NORM'])
-    train_loader, test_loader, val_loader = dataset.get_loaders()
-    path = "G:\\Projects\\MA"
-    model_version = 1
+    train_dataset = PTBXLDataset(labels = ['MI'], folds=range(1,5), train_mode=True)
+    test_dataset = PTBXLDataset(labels = ['MI'], folds=[9])
+    val_dataset = PTBXLDataset(labels = ['MI'], folds=[10])
+    
+    train_loader = train_dataset.get_full_loader()
+    test_loader = test_dataset.get_full_loader()
+    val_loader = val_dataset.get_full_loader()
+
+
+    path = "G:\\Projects\\MA\\models"
+    model_version = '10.fBase'
 
     recalculate = False
 
@@ -261,14 +258,14 @@ if __name__=="__main__":
         output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
         y_pred.extend(output) # Save Prediction
         
-        labels = labels['NORM'].cpu().numpy()
+        labels = labels['MI'].cpu().numpy()
         y_true.extend(labels) # Save Truth
 
     for inputs, _, _, labels in val_loader:
-        print(labels['NORM'])
+        print(labels['MI'])
         break
 
-    classes = ('Normal', 'Abnormal')
+    classes = ('MI', 'non-MI')
     cf_matrix = confusion_matrix(y_true, y_pred)
     df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index = [i for i in classes],
                         columns = [i for i in classes])

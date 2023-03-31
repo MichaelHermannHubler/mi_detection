@@ -39,7 +39,7 @@ class CNN(nn.Module):
             # nn.Linear(1632, 128), # 7
             # nn.Linear(672, 128), # 8
             # nn.Linear(288, 128), # 9 
-            nn.Linear(336, 128), # 10
+            nn.Linear(338, 128), # 10
             # nn.Linear(240, 128), # 11
             nn.Dropout(p=0.6),
             nn.LeakyReLU(),
@@ -48,7 +48,7 @@ class CNN(nn.Module):
 
         self.is_conv = True
         
-    def forward(self, x):
+    def forward(self, x, sex, age):
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
@@ -63,6 +63,8 @@ class CNN(nn.Module):
 
         # flatten the output of conv
         x = x.view(x.size(0), -1)    
+        x = torch.cat((x, sex, age), dim=1)
+
         x = self.lin1(x)
 
         output = self.out(x)
@@ -72,8 +74,10 @@ def train(model, train_loader, optimizer, loss_fun, device):
     model.train()
     run_loss = 0
     
-    for i, (signal, _, _, targets) in enumerate(tqdm(train_loader, desc='Train')):
+    for i, (signal, sex, age, targets) in enumerate(tqdm(train_loader, desc='Train')):
         signal = signal.to(device)
+        sex = sex.to(device)
+        age = age.to(device)
         targets = targets.to(device)
 
         # get batch size
@@ -81,6 +85,8 @@ def train(model, train_loader, optimizer, loss_fun, device):
             
         # fully connected model: we need to flatten the signals
         x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 4000)
+        sex = sex.view(bs,-1) if not model.is_conv else sex.view(bs, 1)
+        age = age.view(bs,-1) if not model.is_conv else age.view(bs, 1)
             
         # signal to device
         x = x.to(device)
@@ -89,7 +95,7 @@ def train(model, train_loader, optimizer, loss_fun, device):
         optimizer.zero_grad()
             
         # forward pass
-        out = model(x)
+        out = model(x, sex, age)
             
         # calc loss and gradients
 
@@ -106,16 +112,20 @@ def test(model, test_loader, device):
     model.eval()    
 
     accs = []
-    for i, (signal, _, _, targets) in enumerate(tqdm(test_loader, desc='Test')):
+    for i, (signal, sex, age, targets) in enumerate(tqdm(test_loader, desc='Test')):
         signal = signal.to(device)
+        sex = sex.to(device)
+        age = age.to(device)
         targets = targets.to(device)
         
         bs = signal.shape[0]
 
         x = signal.view(bs,-1) if not model.is_conv else signal.view(bs, 12, 4000)
+        sex = sex.view(bs,-1) if not model.is_conv else sex.view(bs, 1)
+        age = age.view(bs,-1) if not model.is_conv else age.view(bs, 1)
         x = x.to(device)
 
-        out = model(x)
+        out = model(x, sex, age)
         acc_ = (out.argmax(-1) == targets).float().sum()/len(targets)
         acc_ = acc_.to('cpu')
 
@@ -127,7 +137,7 @@ def test(model, test_loader, device):
 
 def main():
     num_epochs = 150
-    num_folds = 10
+    num_folds = 5
     depth = '10.f'
     
     best_acc = 0
@@ -177,22 +187,22 @@ def main():
         
         plt.plot(tr_loss, label='train loss')
         plt.legend()
-        plt.savefig(f'G:\Projects\MA\images\GNN\{depth}_Layers_{fold + 1}_Loss_lr{lr}.png')
+        plt.savefig(f'G:\Projects\MA\images\GNN\{depth}_Layers_withAge_{fold + 1}_Loss_lr{lr}.png')
         plt.clf()
         
         plt.plot(tr_acc, label='train accuracy')
         plt.plot(te_acc, label='test accuracy')
         plt.legend()
-        plt.savefig(f'G:\Projects\MA\images\GNN\{depth}_Layers_{fold + 1}_Acc_lr{lr}.png')
+        plt.savefig(f'G:\Projects\MA\images\GNN\{depth}_Layers_withAge_{fold + 1}_Acc_lr{lr}.png')
         plt.clf()
 
-        with open(f'G:\Projects\MA\\variables\GNN\{depth}_Layers_{fold + 1}_train_loss.pkl', 'wb') as f:
+        with open(f'G:\Projects\MA\\variables\GNN\{depth}_Layers_withAge_{fold + 1}_train_loss.pkl', 'wb') as f:
             pickle.dump(tr_loss, f)
             
-        with open(f'G:\Projects\MA\\variables\GNN\{depth}_Layers_{fold + 1}_train_acc.pkl', 'wb') as f:
+        with open(f'G:\Projects\MA\\variables\GNN\{depth}_Layers_withAge_{fold + 1}_train_acc.pkl', 'wb') as f:
             pickle.dump(tr_acc, f)
             
-        with open(f'G:\Projects\MA\\variables\GNN\{depth}_Layers_{fold + 1}_test_acc.pkl', 'wb') as f:
+        with open(f'G:\Projects\MA\\variables\GNN\{depth}_Layers_withAge_{fold + 1}_test_acc.pkl', 'wb') as f:
             pickle.dump(te_acc, f)
 
     print(f'Best test acc = {best_acc:.5f}')
@@ -201,24 +211,24 @@ def main():
     return model
 
 if __name__=="__main__":
-    dataset = GeneralDataset()
+    dataset = GeneralDataset(include_age=True, include_sex=True)
     train_loader, test_loader, val_loader = dataset.get_Loaders()
     path = "G:\\Projects\\MA\\models\\"
     model_version = 'final'
 
 
-    if os.path.exists(os.path.join(path, f'model{model_version}.chpt')):
+    if os.path.exists(os.path.join(path, f'model{model_version}_withAge.chpt')):
         model = CNN()
-        model.load_state_dict(torch.load(os.path.join(path, f'model{model_version}.chpt')))
+        model.load_state_dict(torch.load(os.path.join(path, f'model{model_version}_withAge.chpt')))
     else:    
         model = main()
-        torch.save(model.state_dict(), os.path.join(path, f'model{model_version}.chpt'))
+        torch.save(model.state_dict(), os.path.join(path, f'model{model_version}_withAge.chpt'))
 
     model.eval()
     model.to('cpu')
 
-    def data_test(model, signal, ytrue):
-        pred = model(signal.view(signal.shape[0], 12, 4000))
+    def data_test(model, signal, ytrue, sex, age):
+        pred = model(signal.view(signal.shape[0], 12, 4000), sex, age)
         pred = torch.argmax(pred)
         if pred != ytrue:
             print('Prediction: ', pred, 'Real: ', ytrue)
@@ -227,8 +237,11 @@ if __name__=="__main__":
     y_true = []
 
     # iterate over test data
-    for inputs, _, _, labels in val_loader:
-        output = model(inputs.view(inputs.shape[0], 12, 4000)) # Feed Network
+    for inputs, sex, age, labels in val_loader:
+        bs = inputs.shape[0]
+        sex = sex.view(bs,-1) if not model.is_conv else sex.view(bs, 1)
+        age = age.view(bs,-1) if not model.is_conv else age.view(bs, 1)
+        output = model(inputs.view(inputs.shape[0], 12, 4000), sex, age) # Feed Network
 
         output = (torch.max(torch.exp(output), 1)[1]).data.cpu().numpy()
         y_pred.extend(output) # Save Prediction
@@ -241,7 +254,7 @@ if __name__=="__main__":
     print('Precision: ', precision_score(y_true, y_pred))
     print('Recall: ', recall_score(y_true, y_pred))
     print('F1 Score: ', f1_score(y_true, y_pred))
-
+    
     classes = ('Normal', 'Abnormal')
     cf_matrix = confusion_matrix(y_true, y_pred)
     df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index = [i for i in classes],
