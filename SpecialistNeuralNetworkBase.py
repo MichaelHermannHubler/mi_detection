@@ -45,8 +45,15 @@ class FinetunedCNN(nn.Module):
             nn.Linear(192, 1024),
             nn.ReLU(),
         )   
+        
+        self.lin2 = nn.Sequential(
+            nn.Dropout(p=0.6),
+            nn.Linear(1024, 128),
+            nn.Dropout(p=0.6),
+            nn.LeakyReLU(),
+        )
 
-        self.norm = utls.OutputBlock(in_channels=1024, out_channels=2)
+        self.norm = utls.OutputBlock(in_channels=128, out_channels=2)
 
         self.is_conv = True 
 
@@ -67,6 +74,7 @@ class FinetunedCNN(nn.Module):
         x = x.view(x.size(0), -1)
 
         x = self.lin1(x)
+        x = self.lin2(x)
         
         return self.norm(x)
 

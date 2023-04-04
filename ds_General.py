@@ -116,7 +116,7 @@ class GeneralDataset(Dataset):
         dataCode = loadCode15()
         dataCode['source'] = 'C15'
         # Reduce size for Performance reasons
-        dataCode = dataCode.sample(n=int(len(dataChap) / 10), random_state=42)
+        dataCode = dataCode.sample(n=int(len(dataCode) / 10), random_state=42)
 
         dataCPSC = loadCPSC2018()
         dataCPSC['source'] = 'CP'
