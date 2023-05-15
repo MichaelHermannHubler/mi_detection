@@ -123,7 +123,7 @@ class GeneralDataset(Dataset):
 
         # remove "unclean Data"
         dataCPSC['Signal_Length'] = dataCPSC.apply(getSignalLength, axis = 1)
-        dataCPSC = dataCPSC[dataCPSC['Signal_Length'] >= 5000]
+        dataCPSC = dataCPSC[dataCPSC['Signal_Length'] >= 4000]
         dataCPSC.reset_index(drop=True, inplace=True)
         dataCPSC.drop(columns=['Signal_Length'], inplace=True)
 
@@ -132,7 +132,7 @@ class GeneralDataset(Dataset):
 
         # remove "unclean Data"
         dataCPSCExtra['Signal_Length'] = dataCPSCExtra.apply(getSignalLength, axis = 1)
-        dataCPSCExtra = dataCPSCExtra[dataCPSCExtra['Signal_Length'] >= 5000]
+        dataCPSCExtra = dataCPSCExtra[dataCPSCExtra['Signal_Length'] >= 4000]
         dataCPSCExtra.reset_index(drop=True, inplace=True)
         dataCPSCExtra.drop(columns=['Signal_Length'], inplace=True)
 
@@ -141,14 +141,14 @@ class GeneralDataset(Dataset):
 
         # remove "unclean Data"
         dataGeorgia['Signal_Length'] = dataGeorgia.apply(getSignalLength, axis = 1)
-        dataGeorgia = dataGeorgia[dataGeorgia['Signal_Length'] >= 5000]
+        dataGeorgia = dataGeorgia[dataGeorgia['Signal_Length'] >= 4000]
         dataGeorgia.reset_index(drop=True, inplace=True)
         dataGeorgia.drop(columns=['Signal_Length'], inplace=True)
 
         dataNingbo = loadNingbo()
         dataNingbo['source'] = 'NI'
         # Reduce size for Performance reasons
-        dataChap = dataChap.sample(n=int(len(dataChap) / 2), random_state=42)
+        dataNingbo = dataNingbo.sample(n=int(len(dataNingbo) / 2), random_state=42)
 
         df = pd.concat([dataChap, dataCode, dataCPSC, dataCPSCExtra, dataGeorgia, dataNingbo])
 

@@ -193,7 +193,7 @@ class PTBXLDataset(Dataset):
     
     def get_full_loader(self, batch_size=32, use_sampler=False):
         # Strange performance increase - doing train test split before increases performance by up to ~30 times
-        train_data, _ = train_test_split(self, test_size=0.00001, random_state=42)
+        train_data, _ = train_test_split(self, test_size=0.0000001, random_state=42)
         if use_sampler:
             bs = BalancedSampler(train_data, 100)
             return DataLoader(dataset=train_data, batch_size=batch_size, sampler=bs)

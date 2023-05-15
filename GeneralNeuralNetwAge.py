@@ -33,14 +33,9 @@ class CNN(nn.Module):
         self.conv8 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
         self.conv9 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
         self.conv10 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
-        self.conv11 = utls.ConvolutionBlock(in_channels=48, out_channels=48)
                 
         self.lin1 = nn.Sequential(      
-            # nn.Linear(1632, 128), # 7
-            # nn.Linear(672, 128), # 8
-            # nn.Linear(288, 128), # 9 
-            nn.Linear(338, 128), # 10
-            # nn.Linear(240, 128), # 11
+            nn.Linear(338, 128),
             nn.Dropout(p=0.6),
             nn.LeakyReLU(),
         )     
@@ -59,7 +54,6 @@ class CNN(nn.Module):
         x = self.conv8(x)
         x = self.conv9(x)
         x = self.conv10(x)
-        # x = self.conv11(x)
 
         # flatten the output of conv
         x = x.view(x.size(0), -1)    

@@ -5,16 +5,14 @@ import torch.nn as nn
 import seaborn as sn
 import pandas as pd
 import torch.optim as optim
-from adabelief_pytorch import AdaBelief
 import matplotlib.pyplot as plt
 import os
 import numpy as np
 
-from torch.nn import BCEWithLogitsLoss
 from tqdm import tqdm
 from copy import deepcopy
 
-from sklearn.metrics import confusion_matrix, accuracy_score, multilabel_confusion_matrix, hamming_loss,ConfusionMatrixDisplay
+from sklearn.metrics import accuracy_score, multilabel_confusion_matrix, hamming_loss
 
 import torch.nn as nn
 import torch
@@ -52,7 +50,7 @@ def train(model, train_loader, optimizer, loss_fun, device):
         signal = signal.to(device)
         sex = sex.to(device)
         age = age.to(device)
-        #targets = targets.values().to(device)
+        
         labels = []
         for item in range(targets['NORM'].shape[0]):
             labels.append([
@@ -436,7 +434,6 @@ if __name__=="__main__":
         data_test(model, inputs, labels, sex, age)
 
     for i, key in enumerate(accs):
-        #print(accs[key])
         accs[key] = torch.stack(accs[key]).float().sum()/len(accs[key])
         print(f'{key}: {accs[key]:.3f}% ({count_pred[key]}/{count_true[key]})')
 
@@ -449,11 +446,6 @@ if __name__=="__main__":
     ml_conf = multilabel_confusion_matrix(y_true, y_pred)
 
     for i in range(15):
-        # disp = ConfusionMatrixDisplay(confusion_matrix(y_true[:, i],
-        #                                             y_pred[:, i]),
-        #                             display_labels=[0, i])
-        # disp = ConfusionMatrixDisplay(ml_conf[i],
-        #                             display_labels=['Others', list(accs.keys())[i]])
         df_cm = pd.DataFrame(ml_conf[i], index = ['Others', list(accs.keys())[i]],
                         columns = ['Others', list(accs.keys())[i]])
         

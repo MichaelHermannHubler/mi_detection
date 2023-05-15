@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 
-from torch.nn import CrossEntropyLoss
 from tqdm import tqdm
 from copy import deepcopy
 

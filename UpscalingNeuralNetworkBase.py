@@ -9,8 +9,6 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 
-from torch.nn import CrossEntropyLoss
-
 from sklearn.metrics import confusion_matrix, accuracy_score, f1_score, precision_score, recall_score
 from tqdm import tqdm
 from copy import deepcopy
@@ -194,7 +192,6 @@ def loadLayer(state_dict, layerName, layer):
 
 
 if __name__=="__main__":
-    #dataset = PTBXLDataset(labels = ['NORM'], leads=range(6))
     train_dataset = PTBXLDataset(labels = ['NORM'], folds=range(6,8), leads=range(6))
     test_dataset = PTBXLDataset(labels = ['NORM'], folds=[9], leads=range(6))
     val_dataset = PTBXLDataset(labels = ['NORM'], folds=[10], leads=range(6))
